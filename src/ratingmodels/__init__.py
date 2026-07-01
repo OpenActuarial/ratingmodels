@@ -5,24 +5,27 @@ trend, manual and experience rate construction, credibility blending, rate
 indication, rate-change decomposition, GLM relativity estimation, and renewal
 constraints. Part of the OpenActuarial ecosystem.
 
-Quick start
------------
->>> import ratingmodels as rm
->>> exp = rm.ExperienceRate(
-...     incurred_claims=4_200_000, exposure=96_000,
-...     trend_annual=0.075, trend_years=1.5,
-...     pooled_excess=350_000, pooling_charge_pmpm=4.0,
-...     target_loss_ratio=0.85,
-... )
->>> man = rm.ManualRate(base_pmpm=480, factors={"area": 1.05, "industry": 0.97})
->>> z = rm.limited_fluctuation_credibility(n=96_000, n_full=120_000)
->>> ind = rm.RateIndication(
-...     experience_claims_pmpm=exp.claims_pmpm(),
-...     manual_claims_pmpm=man.claims_pmpm(),
-...     credibility=z, current_rate=560, target_loss_ratio=0.85,
-...     trend_total_factor=exp.trend_factor(),
-... )
->>> round(ind.indicated_rate_change(), 4)  # doctest: +SKIP
+Quick start:
+
+.. code-block:: python
+
+    import ratingmodels as rm
+
+    exp = rm.ExperienceRate(
+        incurred_claims=4_200_000, exposure=96_000,
+        trend_annual=0.075, trend_years=1.5,
+        pooled_excess=350_000, pooling_charge_pmpm=4.0,
+        target_loss_ratio=0.85,
+    )
+    man = rm.ManualRate(base_pmpm=480, factors={"area": 1.05, "industry": 0.97})
+    z = rm.limited_fluctuation_credibility(n=96_000, n_full=120_000)
+    ind = rm.RateIndication(
+        experience_claims_pmpm=exp.claims_pmpm(),
+        manual_claims_pmpm=man.claims_pmpm(),
+        credibility=z, current_rate=560, target_loss_ratio=0.85,
+        trend_total_factor=exp.trend_factor(),
+    )
+    round(ind.indicated_rate_change(), 4)
 """
 from __future__ import annotations
 

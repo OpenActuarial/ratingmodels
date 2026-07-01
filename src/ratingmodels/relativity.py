@@ -120,16 +120,18 @@ class GLMRelativities:
     tol : float
         Convergence tolerance on the relative change in deviance.
 
-    Attributes (after :meth:`fit`)
-    ------------------------------
+    Attributes
+    ----------
     coefficients_ : pandas.Series
         Fitted :math:`\beta` including the intercept.
     relativities_ : dict[str, pandas.Series]
         Per-variable multiplicative relativities (base level = 1.0).
     base_value_ : float
         :math:`\exp(\text{intercept})`, the fitted base level.
-    n_iter_, deviance_ : int, float
-        Iterations used and final deviance.
+    n_iter_ : int
+        IRLS iterations used.
+    deviance_ : float
+        Final deviance. These attributes are populated by :meth:`fit`.
     """
 
     family: str = "poisson"
