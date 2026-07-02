@@ -1,3 +1,0 @@
-# Trend
-
-::: ratingmodels.trend

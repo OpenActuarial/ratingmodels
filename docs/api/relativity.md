@@ -1,3 +1,0 @@
-# Relativities (GLM)
-
-::: ratingmodels.relativity

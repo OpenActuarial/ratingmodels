@@ -2,20 +2,9 @@
 
 **Actuarial pricing and rate-indication tools for experience-rated insurance portfolios.**
 
-Part of the [OpenActuarial](https://github.com/OpenActuarial) ecosystem.
-
 `ratingmodels` covers the group rating workflow — the step that turns experience
-analysis and loss modeling into an actual rate. Where the rest of the ecosystem
-explains *what happened* and models *loss risk*, this package answers the central
-pricing question: **what rate should we charge, and why did it change?**
-
-```
-actuarialpy   -> experience analysis (PMPM, loss ratios, trend, completion)
-ratingmodels  -> pricing and rate indications      <-- this package
-lossmodels    -> loss-distribution modeling
-risksim       -> portfolio Monte Carlo simulation
-extremeloss   -> extreme-value tail estimation
-```
+analysis and loss modeling into an actual rate. It answers the central pricing
+question: **what rate should we charge, and why did it change?**
 
 ## What it does
 
@@ -45,9 +34,9 @@ extremeloss   -> extreme-value tail estimation
 - **Constraints & renewal** — rate caps/floors, banding, rounding, corridors,
   and member-level re-rating.
 
-Dependencies are `numpy`, `pandas`, and `actuarialpy` (which supplies the shared credibility primitives; see below).
+Dependencies are `numpy`, `pandas`, and `actuarialpy` (which supplies the shared credibility primitives).
 
-## Install
+## Installation
 
 ```bash
 pip install ratingmodels
@@ -190,7 +179,7 @@ This is a modeling and workflow toolkit, not filed rate software. It does not
 manage rate filings, store filed factor tables with effective dating, or enforce
 state-specific rating rules. The pooling-charge helper is a simple group-level
 estimate; a production charge is normally derived book-wide or from an EVT tail
-model (see `extremeloss`). All bundled data in `ratingmodels.datasets` is
+model. All bundled data in `ratingmodels.datasets` is
 synthetic and carries no assumptions.
 
 ## License

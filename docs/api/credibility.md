@@ -1,3 +1,0 @@
-# Credibility
-
-::: ratingmodels.credibility

@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ratingmodels"
-version = "0.1.0"
+version = "0.1.1"
 description = "Actuarial pricing and rate-indication tools for experience-rated insurance portfolios."
 readme = "README.md"
-requires-python = ">=3.9"
-license = { text = "MIT" }
-authors = [{ name = "OpenActuarial" }]
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Michael Bryant" }]
 keywords = [
     "actuarial",
     "insurance",
@@ -25,24 +25,28 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = [
     "numpy>=1.22",
     "pandas>=1.4",
-    "actuarialpy>=0.32.0",
+    "actuarialpy~=0.33.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "pytest-cov"]
-docs = ["mkdocs-material>=9", "mkdocstrings[python]>=0.24"]
 
 [project.urls]
 Homepage = "https://github.com/OpenActuarial/ratingmodels"
-Documentation = "https://openactuarial.github.io/ratingmodels/"
+Documentation = "https://openactuarial.org/ratingmodels.html"
 Repository = "https://github.com/OpenActuarial/ratingmodels"
 Issues = "https://github.com/OpenActuarial/ratingmodels/issues"
 
@@ -55,4 +59,4 @@ addopts = "-q"
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"

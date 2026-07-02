@@ -91,7 +91,14 @@ from .trend import (
     years_between,
 )
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError, version as _version
+
+try:
+    __version__ = _version("ratingmodels")
+except _PackageNotFoundError:  # running from a source tree without an installed distribution
+    __version__ = "0.0.0"
+
+del _PackageNotFoundError, _version
 
 __all__ = [
     "__version__",
