@@ -23,7 +23,7 @@ def sample_rating_data(n: int = 4000, seed: int = 0) -> pd.DataFrame:
     """A frequency dataset with correlated rating variables and exposure.
 
     Returns columns: ``area``, ``industry``, ``tier``, ``exposure``
-    (member-months) and ``claims`` (counts), generated from known relativities
+    (exposure units) and ``claims`` (counts), generated from known relativities
     so a GLM should approximately recover them.
     """
     rng = np.random.default_rng(seed)
@@ -49,7 +49,7 @@ def sample_rating_data(n: int = 4000, seed: int = 0) -> pd.DataFrame:
     ind_rel = {"retail": 1.0, "manufacturing": 1.4, "tech": 0.75}
     tier_rel = {"bronze": 1.0, "silver": 1.15, "gold": 1.3}
 
-    exposure = rng.integers(12, 240, size=n).astype(float)  # member-months
+    exposure = rng.integers(12, 240, size=n).astype(float)  # exposure units
     mu = (
         base
         * np.array([area_rel[a] for a in area])

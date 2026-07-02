@@ -34,23 +34,23 @@ class RateIndication:
 
     Parameters
     ----------
-    experience_claims_pmpm : float
-        Trended, pooled, adjusted experience claims PMPM
+    experience_loss_cost : float
+        Trended, pooled, adjusted experience loss cost (per exposure unit)
         (see :class:`ratingmodels.ExperienceRate`).
-    manual_claims_pmpm : float
-        Manual claims PMPM at the rating-period level
+    manual_loss_cost : float
+        Manual loss cost at the rating-period level
         (see :class:`ratingmodels.ManualRate`).
     credibility : float
         Credibility ``Z`` assigned to experience, in [0, 1].
     current_rate : float
-        Current charged rate PMPM.
+        Current charged rate per exposure unit.
     target_loss_ratio : float
         Claims / premium target used to load claims to a charged rate.
     current_premium : float, optional
         On-level earned premium over the experience period; required only for
         the loss-ratio method.
     exposure : float, optional
-        Member-months over the experience period; required for the loss-ratio
+        Exposure units over the experience period; required for the loss-ratio
         method (with ``current_premium``) to form an experience loss ratio.
     trend_total_factor : float
         Total claims trend factor :math:`(1+t)^\Delta`; used by the loss-ratio
@@ -59,8 +59,8 @@ class RateIndication:
         Driver factors for the rate-change decomposition. Default 1.0.
     """
 
-    experience_claims_pmpm: float
-    manual_claims_pmpm: float
+    experience_loss_cost: float
+    manual_loss_cost: float
     credibility: float
     current_rate: float
     target_loss_ratio: float = 0.85
@@ -72,33 +72,33 @@ class RateIndication:
     retention: "RetentionLoad | None" = None
 
     def __post_init__(self) -> None:
-        require_positive(self.experience_claims_pmpm + 1e-12, "experience_claims_pmpm")
-        require_positive(self.manual_claims_pmpm, "manual_claims_pmpm")
+        require_positive(self.experience_loss_cost + 1e-12, "experience_loss_cost")
+        require_positive(self.manual_loss_cost, "manual_loss_cost")
         require_unit_interval(self.credibility, "credibility")
         require_positive(self.current_rate, "current_rate")
         require_unit_interval(self.target_loss_ratio, "target_loss_ratio", closed=False)
 
     # ----- claims-level blending ----- #
-    def blended_claims_pmpm(self) -> float:
+    def blended_loss_cost(self) -> float:
         return blend(
-            self.experience_claims_pmpm, self.manual_claims_pmpm, self.credibility
+            self.experience_loss_cost, self.manual_loss_cost, self.credibility
         )
 
     # ----- charged rates ----- #
-    def _gross(self, claims_pmpm: float) -> float:
+    def _gross(self, loss_cost: float) -> float:
         """Gross claims to a charged rate via retention, else target loss ratio."""
         if self.retention is not None:
-            return self.retention.gross_rate(claims_pmpm)
-        return claims_pmpm / self.target_loss_ratio
+            return self.retention.gross_rate(loss_cost)
+        return loss_cost / self.target_loss_ratio
 
     def experience_rate(self) -> float:
-        return self._gross(self.experience_claims_pmpm)
+        return self._gross(self.experience_loss_cost)
 
     def manual_rate(self) -> float:
-        return self._gross(self.manual_claims_pmpm)
+        return self._gross(self.manual_loss_cost)
 
     def blended_rate(self) -> float:
-        return self._gross(self.blended_claims_pmpm())
+        return self._gross(self.blended_loss_cost())
 
     # ----- indication (build-up) ----- #
     def indicated_rate(self) -> float:
@@ -117,7 +117,7 @@ class RateIndication:
             )
         require_positive(self.current_premium, "current_premium")
         require_positive(self.exposure, "exposure")
-        experience_claims = self.experience_claims_pmpm * self.exposure
+        experience_claims = self.experience_loss_cost * self.exposure
         return experience_claims / self.current_premium
 
     def loss_ratio_indication(self) -> float:
@@ -145,7 +145,7 @@ class RateIndication:
         Any remaining movement (rate adequacy / loading) is absorbed by an
         explicit ``residual`` factor so the parts reconcile to the total.
         """
-        experience_factor = self.blended_claims_pmpm() / self.manual_claims_pmpm
+        experience_factor = self.blended_loss_cost() / self.manual_loss_cost
         drivers = {
             "trend": self.trend_total_factor,
             "experience": experience_factor,

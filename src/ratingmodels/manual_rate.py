@@ -4,11 +4,11 @@ The manual (book) rate is a base cost level scaled by the product of rating
 relativities and then loaded for expenses and margin:
 
 .. math::
-    \text{manual PMPM} = \text{base} \times \prod_i f_i, \qquad
-    \text{manual rate} = \frac{\text{manual PMPM}}{\text{target loss ratio}}.
+    \text{manual loss cost} = \text{base} \times \prod_i f_i, \qquad
+    \text{manual rate} = \frac{\text{manual loss cost}}{\text{target loss ratio}}.
 
-For a group, member-level demographic factors are aggregated to a single
-relativity (membership-weighted) before composing with group-level factors
+For a group, unit-level demographic factors are aggregated to a single
+relativity (exposure-weighted) before composing with group-level factors
 (area, industry, group size, network, plan/benefit).
 """
 from __future__ import annotations
@@ -24,18 +24,19 @@ from .buildup import BuildUpResult, checkpoint, evaluate, multiply, start
 from .loading import RetentionLoad
 
 
-def manual_pmpm(base_pmpm: float, factors: Sequence[float]) -> float:
-    r"""Base PMPM scaled by the product of relativities."""
-    require_positive(base_pmpm, "base_pmpm")
-    return base_pmpm * product(factors)
+def manual_loss_cost(base_loss_cost: float, factors: Sequence[float]) -> float:
+    r"""Base loss cost scaled by the product of relativities."""
+    require_positive(base_loss_cost, "base_loss_cost")
+    return base_loss_cost * product(factors)
 
 
 def aggregate_demographic_factor(
     census: pd.DataFrame,
     factor_col: str,
-    weight_col: str = "members",
+    weight_col: str = "count",
 ) -> float:
-    """Membership-weighted average of a member-level demographic factor."""
+    """Weighted average of a unit-level demographic factor (e.g. an age/sex
+    factor weighted by member counts)."""
     w = census[weight_col].to_numpy(dtype=float)
     f = census[factor_col].to_numpy(dtype=float)
     if w.sum() <= 0:
@@ -49,8 +50,8 @@ class ManualRate:
 
     Parameters
     ----------
-    base_pmpm : float
-        Base claims cost PMPM at the rating-period level (see
+    base_loss_cost : float
+        Base loss cost (per exposure unit) at the rating-period level (see
         :func:`ratingmodels.base_rate_from_experience` to derive it).
     factors : mapping
         Named relativities, e.g. ``{"area": 1.05, "industry": 0.97, ...}``.
@@ -60,51 +61,51 @@ class ManualRate:
     retention : RetentionLoad, optional
         Full expense / profit loading. When provided, the charged rate is built
         with the fundamental insurance equation instead of a single loss ratio,
-        and fixed expense is applied per member (flat across cells).
+        and fixed expense is applied per exposure unit (flat across cells).
     """
 
-    base_pmpm: float
+    base_loss_cost: float
     factors: Mapping[str, float] = field(default_factory=dict)
     target_loss_ratio: float = 0.85
     retention: "RetentionLoad | None" = None
 
     def __post_init__(self) -> None:
-        require_positive(self.base_pmpm, "base_pmpm")
+        require_positive(self.base_loss_cost, "base_loss_cost")
         if self.retention is None:
             require_unit_interval(self.target_loss_ratio, "target_loss_ratio", closed=False)
 
     def total_relativity(self) -> float:
         return product(self.factors.values())
 
-    def claims_pmpm(self) -> float:
-        """Expected manual claims PMPM (before expense/margin loading)."""
-        return self.base_pmpm * self.total_relativity()
+    def loss_cost(self) -> float:
+        """Expected manual loss cost (before expense/margin loading)."""
+        return self.base_loss_cost * self.total_relativity()
 
     def steps(self) -> list:
         """The manual claims build-up as an ordered list of steps."""
-        s = [start("Base claims cost", self.base_pmpm)]
+        s = [start("Base claims cost", self.base_loss_cost)]
         s += [multiply(name, factor) for name, factor in self.factors.items()]
-        s.append(checkpoint("Manual claims PMPM"))
+        s.append(checkpoint("Manual loss cost"))
         return s
 
     def breakdown(self) -> "BuildUpResult":
         """Audit trail of the manual claims build-up (base x each relativity).
 
-        The final running total equals :meth:`claims_pmpm` up to floating point.
+        The final running total equals :meth:`loss_cost` up to floating point.
         """
         return evaluate(self.steps())
 
     def rate(self) -> float:
-        """Charged manual rate PMPM.
+        """Charged manual rate per exposure unit.
 
         Uses ``retention`` (the full gross-up) when supplied, otherwise
-        ``claims PMPM / target_loss_ratio``.
+        ``loss cost / target_loss_ratio``.
         """
         if self.retention is not None:
-            return self.retention.gross_rate(self.claims_pmpm())
-        return self.claims_pmpm() / self.target_loss_ratio
+            return self.retention.gross_rate(self.loss_cost())
+        return self.loss_cost() / self.target_loss_ratio
 
     def with_factor(self, name: str, value: float) -> "ManualRate":
         new = dict(self.factors)
         new[name] = value
-        return ManualRate(self.base_pmpm, new, self.target_loss_ratio)
+        return ManualRate(self.base_loss_cost, new, self.target_loss_ratio)

@@ -19,17 +19,17 @@ from ratingmodels.datasets import sample_rating_data
 
 
 def main() -> None:
-    exposure = 96_000  # member-months for the group (~8,000 members)
+    exposure = 96_000  # exposure units for the case (e.g. member-months)
 
     # ----- retention: what we load on top of claims ----------------------- #
-    # percent-of-premium loads plus a flat admin dollar PMPM; profit margin.
+    # percent-of-premium loads plus a flat admin dollar per unit; profit margin.
     retention = rm.RetentionLoad.from_items(
-        fixed_expense_pmpm=22.0,
+        fixed_expense=22.0,
         variable_items={"commission": 0.030, "premium_tax": 0.023, "aca_fees": 0.005},
         profit_margin=0.030,
     )
     print("=== Retention ===")
-    print(f"fixed expense PMPM    : {retention.fixed_expense_pmpm:.2f}")
+    print(f"fixed expense per unit    : {retention.fixed_expense:.2f}")
     print(f"variable + profit     : {retention.variable_and_profit:.3f} of premium")
 
     # ----- base rate from book experience (off-balance) ------------------- #
@@ -44,12 +44,12 @@ def main() -> None:
         book, exposure="exposure", loss="loss", factor_cols=["area", "tier"]
     )
     print("\n=== Base rate (book) ===")
-    print(f"average loss cost PMPM: {base.average_loss_cost:.2f}")
+    print(f"average loss cost per unit: {base.average_loss_cost:.2f}")
     print(f"average relativity    : {base.average_relativity:.4f}")
-    print(f"indicated base PMPM   : {base.base_loss_cost:.2f}  (loss cost / avg relativity)")
+    print(f"indicated base per unit   : {base.base_loss_cost:.2f}  (loss cost / avg relativity)")
 
     # ----- this group's experience period --------------------------------- #
-    incurred = 46_400_000.0                # total incurred claims (~483 PMPM)
+    incurred = 46_400_000.0                # total incurred claims (~483 per unit)
     large_claims = [310_000, 420_000, 880_000, 265_000]  # the group's large claimants
     pooling_point = 250_000
     _, excess = rm.pool_claims(large_claims, pooling_point)
@@ -57,42 +57,42 @@ def main() -> None:
     exp = rm.ExperienceRate(
         incurred_claims=incurred, exposure=exposure,
         trend_annual=0.075, trend_years=1.5,
-        pooled_excess=excess, pooling_charge_pmpm=4.00,
+        pooled_excess=excess, pooling_charge=4.00,
         benefit_factor=1.00, demographic_factor=1.01,
         retention=retention,
     )
     print("\n=== Experience ===")
-    print(f"excess above {pooling_point:,}: {excess:,.0f}  ({excess / exposure:.2f} PMPM)")
-    print(f"experience claims PMPM: {exp.claims_pmpm():.2f}")
-    print(f"experience rate PMPM  : {exp.rate():.2f}")
+    print(f"excess above {pooling_point:,}: {excess:,.0f}  ({excess / exposure:.2f} per unit)")
+    print(f"experience claims per unit: {exp.loss_cost():.2f}")
+    print(f"experience rate per unit  : {exp.rate():.2f}")
 
     # ----- manual rate (derived base + this group's factors) --------------- #
     man = rm.ManualRate(
-        base_pmpm=base.base_loss_cost,
+        base_loss_cost=base.base_loss_cost,
         factors={"area": 1.05, "industry": 0.97, "tier": 1.10},
         retention=retention,
     )
     print("\n=== Manual ===")
-    print(f"manual claims PMPM    : {man.claims_pmpm():.2f}")
-    print(f"manual rate PMPM      : {man.rate():.2f}")
+    print(f"manual claims per unit    : {man.loss_cost():.2f}")
+    print(f"manual rate per unit      : {man.rate():.2f}")
 
     # ----- credibility & indication --------------------------------------- #
     z = rm.limited_fluctuation_credibility(n=exposure, n_full=120_000)
     current_rate = 560.0
     ind = rm.RateIndication(
-        experience_claims_pmpm=exp.claims_pmpm(),
-        manual_claims_pmpm=man.claims_pmpm(),
+        experience_loss_cost=exp.loss_cost(),
+        manual_loss_cost=man.loss_cost(),
         credibility=z, current_rate=current_rate,
         current_premium=current_rate * exposure, exposure=exposure,
         trend_total_factor=exp.trend_factor(),
         benefit_factor=1.00, demographic_factor=1.01,
         retention=retention,
     )
-    blended_claims = ind.blended_claims_pmpm()
+    blended_claims = ind.blended_loss_cost()
     print("\n=== Indication ===")
     print(f"credibility Z         : {z:.3f}")
-    print(f"blended claims PMPM   : {blended_claims:.2f}")
-    print(f"indicated rate PMPM   : {ind.indicated_rate():.2f}")
+    print(f"blended claims per unit   : {blended_claims:.2f}")
+    print(f"indicated rate per unit   : {ind.indicated_rate():.2f}")
     print(f"indicated change      : {ind.indicated_rate_change():+.2%}")
     # the loss ratio is an OUTPUT of the retention stack, not an input
     print(f"implied loss ratio    : {retention.implied_loss_ratio(blended_claims):.3f}"
@@ -134,7 +134,7 @@ def main() -> None:
     total = rm.combine_streams({"Medical": med, "Drug": 323.67}, label="Med + Drug Claim Cost")
     print("\n=== Combine streams ===")
     print(total.breakdown.round(2).to_string(index=False))
-    print(f"-> feed {total.value:.2f} PMPM into trend / credibility / retention")
+    print(f"-> feed {total.value:.2f} per unit into trend / credibility / retention")
 
     # ----- GLM relativities on a book ------------------------------------- #
     print("\n=== GLM relativities (Poisson frequency) ===")

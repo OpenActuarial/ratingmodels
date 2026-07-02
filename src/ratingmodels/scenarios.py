@@ -8,18 +8,23 @@ uplift to a book's actions holds the aggregate margin when the achieved
 actions slip below formula. This module answers those with the same expense
 algebra the indication already uses (:class:`ratingmodels.RetentionLoad`).
 
-**Forward.**  At charged rate :math:`P` with claims :math:`L`, LAE ratio
-``lae``, fixed expense :math:`F` PMPM, and variable load :math:`V` (percent of
-premium):
+All rates and costs are per unit of exposure -- whatever the caller's unit is
+(member months, policy months, earned exposures). Dollar outputs are the
+per-unit figures times ``exposure``.
+
+**Forward.**  At charged rate :math:`P` with loss cost :math:`L`, LAE ratio
+``lae``, fixed expense :math:`F` per exposure unit, and variable load
+:math:`V` (percent of premium):
 
 .. math::
 
     \text{gross margin} = P - L(1+\text{lae}), \qquad
     \text{margin} = P(1 - V) - L(1+\text{lae}) - F.
 
-Gross margin is the benefit-tier margin (admin excluded); ``margin`` is the
-underwriting gain after retention expense. At the indicated rate the margin
-ratio equals the retention's ``profit_margin`` exactly.
+Gross margin is the loss-tier margin (operating expense excluded);
+``margin`` is the underwriting gain after retention expense. At the
+indicated rate the margin ratio equals the retention's ``profit_margin``
+exactly.
 
 **Inverse.**  The rate that yields margin ratio :math:`m` has the same form
 as the gross-up itself, with :math:`m` in place of the profit provision:
@@ -56,24 +61,24 @@ _MODES = ("multiplicative", "additive")
 class ScenarioOutcome:
     """Result of evaluating one case at one rate action.
 
-    PMPM fields are always present. Dollar fields require ``member_months``
-    on the evaluation and are ``None`` otherwise; ``expected_*`` fields
-    additionally require ``persistency`` and are the renewal-probability-
-    weighted expectations (the deterministic counterpart of a retention
-    Bernoulli).
+    Per-exposure fields are always present. Dollar fields require
+    ``exposure`` on the evaluation and are ``None`` otherwise;
+    ``expected_*`` fields additionally require ``persistency`` and are the
+    renewal-probability-weighted expectations (the deterministic counterpart
+    of a retention Bernoulli).
     """
 
     name: str | None
     rate_change: float
-    premium_pmpm: float
-    claims_pmpm: float
-    benefit_pmpm: float
-    admin_pmpm: float
+    premium_rate: float
+    loss_cost: float
+    loss_and_lae: float
+    expense_rate: float
     loss_ratio: float
-    gross_margin_pmpm: float
-    margin_pmpm: float
+    gross_margin_rate: float
+    margin_rate: float
     margin_ratio: float
-    member_months: float | None = None
+    exposure: float | None = None
     persistency: float | None = None
     premium: float | None = None
     gross_margin: float | None = None
@@ -86,15 +91,15 @@ class ScenarioOutcome:
         return {
             "scenario": self.name,
             "rate_change": self.rate_change,
-            "premium_pmpm": self.premium_pmpm,
-            "claims_pmpm": self.claims_pmpm,
-            "benefit_pmpm": self.benefit_pmpm,
-            "admin_pmpm": self.admin_pmpm,
+            "premium_rate": self.premium_rate,
+            "loss_cost": self.loss_cost,
+            "loss_and_lae": self.loss_and_lae,
+            "expense_rate": self.expense_rate,
             "loss_ratio": self.loss_ratio,
-            "gross_margin_pmpm": self.gross_margin_pmpm,
-            "margin_pmpm": self.margin_pmpm,
+            "gross_margin_rate": self.gross_margin_rate,
+            "margin_rate": self.margin_rate,
             "margin_ratio": self.margin_ratio,
-            "member_months": self.member_months,
+            "exposure": self.exposure,
             "persistency": self.persistency,
             "premium": self.premium,
             "gross_margin": self.gross_margin,
@@ -110,33 +115,34 @@ class PricingEvaluation:
 
     Parameters
     ----------
-    claims_pmpm : float
-        Expected claims PMPM over the rating period (trended, pooled,
-        credibility-blended -- e.g. ``RateIndication.blended_claims_pmpm()``).
+    loss_cost : float
+        Expected loss cost per exposure unit over the rating period
+        (trended, pooled, credibility-blended -- e.g.
+        ``RateIndication.blended_loss_cost()``).
     current_rate : float
-        Current charged rate PMPM that rate changes apply to.
+        Current charged rate per exposure unit that rate changes apply to.
     retention : RetentionLoad, optional
         Expense structure. When omitted, no expenses are modeled: ``margin``
-        equals ``gross margin`` (premium less claims) and the inverse solve
+        equals ``gross margin`` (premium less losses) and the inverse solve
         reduces to :math:`P = L / (1 - m)`.
-    member_months : float, optional
-        Rating-period exposure; enables dollar outputs.
+    exposure : float, optional
+        Rating-period exposure units; enables dollar outputs.
     persistency : float in [0, 1], optional
         Renewal probability; enables ``expected_*`` outputs (premium and
         margin scaled by the probability the case is still on the books).
     """
 
-    claims_pmpm: float
+    loss_cost: float
     current_rate: float
     retention: RetentionLoad | None = None
-    member_months: float | None = None
+    exposure: float | None = None
     persistency: float | None = None
 
     def __post_init__(self) -> None:
-        require_nonnegative(self.claims_pmpm, "claims_pmpm")
+        require_nonnegative(self.loss_cost, "loss_cost")
         require_positive(self.current_rate, "current_rate")
-        if self.member_months is not None:
-            require_positive(self.member_months, "member_months")
+        if self.exposure is not None:
+            require_positive(self.exposure, "exposure")
         if self.persistency is not None:
             require_unit_interval(self.persistency, "persistency")
 
@@ -145,10 +151,10 @@ class PricingEvaluation:
         cls,
         indication: RateIndication,
         *,
-        member_months: float | None = None,
+        exposure: float | None = None,
         persistency: float | None = None,
     ) -> "PricingEvaluation":
-        """Adopt a :class:`RateIndication`'s blended claims, rate, and retention.
+        """Adopt a :class:`RateIndication`'s blended loss cost, rate, and retention.
 
         With a retention on the indication, evaluating at
         ``indicated_rate_change()`` returns a margin ratio equal to the
@@ -157,61 +163,61 @@ class PricingEvaluation:
         gross margin.
         """
         return cls(
-            claims_pmpm=indication.blended_claims_pmpm(),
+            loss_cost=indication.blended_loss_cost(),
             current_rate=indication.current_rate,
             retention=indication.retention,
-            member_months=member_months,
+            exposure=exposure,
             persistency=persistency,
         )
 
     # ----- expense algebra ----- #
     def _pieces(self) -> tuple[float, float, float]:
-        """(benefit_pmpm, fixed_pmpm, variable_ratio) under the retention."""
+        """(loss_and_lae, fixed_expense, variable_ratio) under the retention."""
         if self.retention is None:
-            return self.claims_pmpm, 0.0, 0.0
+            return self.loss_cost, 0.0, 0.0
         r = self.retention
-        return self.claims_pmpm * (1.0 + r.lae_ratio), r.fixed_expense_pmpm, r.variable_expense_ratio
+        return self.loss_cost * (1.0 + r.lae_ratio), r.fixed_expense, r.variable_expense_ratio
 
     # ----- forward ----- #
     def at(self, rate_change: float, *, name: str | None = None) -> ScenarioOutcome:
         """Evaluate the case at a given proportional rate change."""
-        premium = self.current_rate * (1.0 + float(rate_change))
-        require_positive(premium, "premium at rate_change")
-        benefit, fixed, variable = self._pieces()
-        admin = fixed + variable * premium
-        gross_margin_pmpm = premium - benefit
-        margin_pmpm = gross_margin_pmpm - admin
-        mm = self.member_months
+        premium_rate = self.current_rate * (1.0 + float(rate_change))
+        require_positive(premium_rate, "premium at rate_change")
+        loss_and_lae, fixed, variable = self._pieces()
+        expense_rate = fixed + variable * premium_rate
+        gross_margin_rate = premium_rate - loss_and_lae
+        margin_rate = gross_margin_rate - expense_rate
+        units = self.exposure
         p = self.persistency
         return ScenarioOutcome(
             name=name,
             rate_change=float(rate_change),
-            premium_pmpm=premium,
-            claims_pmpm=self.claims_pmpm,
-            benefit_pmpm=benefit,
-            admin_pmpm=admin,
-            loss_ratio=self.claims_pmpm / premium,
-            gross_margin_pmpm=gross_margin_pmpm,
-            margin_pmpm=margin_pmpm,
-            margin_ratio=margin_pmpm / premium,
-            member_months=mm,
+            premium_rate=premium_rate,
+            loss_cost=self.loss_cost,
+            loss_and_lae=loss_and_lae,
+            expense_rate=expense_rate,
+            loss_ratio=self.loss_cost / premium_rate,
+            gross_margin_rate=gross_margin_rate,
+            margin_rate=margin_rate,
+            margin_ratio=margin_rate / premium_rate,
+            exposure=units,
             persistency=p,
-            premium=None if mm is None else premium * mm,
-            gross_margin=None if mm is None else gross_margin_pmpm * mm,
-            margin=None if mm is None else margin_pmpm * mm,
-            expected_premium=None if mm is None or p is None else premium * mm * p,
-            expected_margin=None if mm is None or p is None else margin_pmpm * mm * p,
+            premium=None if units is None else premium_rate * units,
+            gross_margin=None if units is None else gross_margin_rate * units,
+            margin=None if units is None else margin_rate * units,
+            expected_premium=None if units is None or p is None else premium_rate * units * p,
+            expected_margin=None if units is None or p is None else margin_rate * units * p,
         )
 
     # ----- inverse ----- #
     def premium_for_margin(self, target_margin: float) -> float:
-        r"""Charged rate PMPM at which the margin ratio equals the target.
+        r"""Charged rate (per exposure unit) at which the margin ratio equals the target.
 
         Closed form: :math:`P = (L(1+\text{lae}) + F) / (1 - V - m)`. The
         target may be negative (a planned loss) but must satisfy
         :math:`m < 1 - V` for a positive, finite rate.
         """
-        benefit, fixed, variable = self._pieces()
+        loss_and_lae, fixed, variable = self._pieces()
         m = float(target_margin)
         denominator = 1.0 - variable - m
         if not denominator > 0:
@@ -219,10 +225,10 @@ class PricingEvaluation:
                 f"target_margin must be less than 1 - variable_expense_ratio "
                 f"= {1.0 - variable:.6g}, got {m!r}"
             )
-        numerator = benefit + fixed
+        numerator = loss_and_lae + fixed
         if numerator <= 0:
             raise ValueError(
-                "premium_for_margin requires positive benefit or fixed "
+                "premium_for_margin requires positive loss cost or fixed "
                 "expense; with both zero every rate yields the target"
             )
         return numerator / denominator
@@ -255,10 +261,10 @@ def scenario_frame(
     -------
     pd.DataFrame
         One row per ``(case, scenario)``: ``case``, ``scenario``,
-        ``rate_change``, PMPM economics, and dollar / persistency-weighted
-        columns where the evaluation carries exposure and persistency. Any
-        summary view -- a cohort rollup, a key-case exhibit -- is a pivot or
-        groupby of this table.
+        ``rate_change``, per-exposure economics, and dollar /
+        persistency-weighted columns where the evaluation carries exposure
+        and persistency. Any summary view -- a cohort rollup, a key-case
+        exhibit -- is a pivot or groupby of this table.
     """
     if not cases:
         raise ValueError("cases must contain at least one PricingEvaluation")
@@ -280,7 +286,7 @@ def scenario_frame(
             rows.append({"case": case_id, **row})
     frame = pd.DataFrame(rows)
     optional = [
-        "member_months",
+        "exposure",
         "persistency",
         "premium",
         "gross_margin",
@@ -308,8 +314,8 @@ def uplift_for_target_margin(
     restores the book's aggregate margin ratio to the target.
 
     Let case :math:`g` have base premium :math:`P_g` (at its base change),
-    per-PMPM cost :math:`K_g = L_g(1+\text{lae}_g) + F_g`, variable load
-    :math:`V_g`, and weight :math:`w_g` = member months (times persistency
+    per-unit cost :math:`K_g = L_g(1+\text{lae}_g) + F_g`, variable load
+    :math:`V_g`, and weight :math:`w_g` = exposure units (times persistency
     when ``weight_by_persistency``). The aggregate margin ratio is
 
     .. math::
@@ -350,17 +356,17 @@ def uplift_for_target_margin(
             change = float(base_changes[case_id])
         else:
             change = float(base_changes)
-        weight = 1.0 if evaluation.member_months is None else float(evaluation.member_months)
+        weight = 1.0 if evaluation.exposure is None else float(evaluation.exposure)
         if weight_by_persistency and evaluation.persistency is not None:
             weight *= evaluation.persistency
         if weight <= 0:
             continue
         base_premium = evaluation.current_rate * (1.0 + change)
         require_positive(base_premium, f"base premium for case {case_id!r}")
-        benefit, fixed, variable = evaluation._pieces()
+        loss_and_lae, fixed, variable = evaluation._pieces()
         entries.append((evaluation, change, weight))
         a += weight * base_premium * (1.0 - variable)
-        b += weight * (benefit + fixed)
+        b += weight * (loss_and_lae + fixed)
         c += weight * base_premium
         a_prime += weight * evaluation.current_rate * (1.0 - variable)
         c_prime += weight * evaluation.current_rate
@@ -368,7 +374,7 @@ def uplift_for_target_margin(
         raise ValueError("all cases have zero weight; nothing to solve")
     if b <= 0:
         raise ValueError(
-            "aggregate benefit and fixed expense are zero; the margin ratio "
+            "aggregate loss and fixed expense are zero; the margin ratio "
             "does not depend on the uplift"
         )
 

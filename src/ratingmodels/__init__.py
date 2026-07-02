@@ -14,14 +14,14 @@ Quick start:
     exp = rm.ExperienceRate(
         incurred_claims=4_200_000, exposure=96_000,
         trend_annual=0.075, trend_years=1.5,
-        pooled_excess=350_000, pooling_charge_pmpm=4.0,
+        pooled_excess=350_000, pooling_charge=4.0,
         target_loss_ratio=0.85,
     )
-    man = rm.ManualRate(base_pmpm=480, factors={"area": 1.05, "industry": 0.97})
+    man = rm.ManualRate(base_loss_cost=480, factors={"area": 1.05, "industry": 0.97})
     z = rm.limited_fluctuation_credibility(n=96_000, n_full=120_000)
     ind = rm.RateIndication(
-        experience_claims_pmpm=exp.claims_pmpm(),
-        manual_claims_pmpm=man.claims_pmpm(),
+        experience_loss_cost=exp.loss_cost(),
+        manual_loss_cost=man.loss_cost(),
         credibility=z, current_rate=560, target_loss_ratio=0.85,
         trend_total_factor=exp.trend_factor(),
     )
@@ -73,7 +73,7 @@ from .loading import (
 from .manual_rate import (
     ManualRate,
     aggregate_demographic_factor,
-    manual_pmpm,
+    manual_loss_cost,
 )
 from .evaluation import (
     gini_coefficient,
@@ -84,7 +84,7 @@ from .relativity import (
     GLMRelativities,
     one_way_relativities,
 )
-from .renewal import RenewalAction, member_level_renewal, renew
+from .renewal import RenewalAction, unit_level_renewal, renew
 from .scenarios import (
     PricingEvaluation,
     ScenarioOutcome,
@@ -134,7 +134,7 @@ __all__ = [
     "lift_table",
     # manual / experience
     "ManualRate",
-    "manual_pmpm",
+    "manual_loss_cost",
     "aggregate_demographic_factor",
     "ExperienceRate",
     "pool_claims",
@@ -175,7 +175,7 @@ __all__ = [
     "corridor",
     "renew",
     "RenewalAction",
-    "member_level_renewal",
+    "unit_level_renewal",
     # pricing scenarios / margin
     "PricingEvaluation",
     "ScenarioOutcome",

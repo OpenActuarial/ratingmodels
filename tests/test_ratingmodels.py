@@ -129,29 +129,29 @@ def test_experience_rate_pipeline():
         trend_annual=0.08,
         trend_years=1.5,
         pooled_excess=400_000,
-        pooling_charge_pmpm=3.0,
+        pooling_charge=3.0,
         target_loss_ratio=0.80,
     )
-    pooled_pmpm = (4_000_000 - 400_000) / 100_000  # 36
-    trended = pooled_pmpm * (1.08**1.5)
+    pooled_loss_cost = (4_000_000 - 400_000) / 100_000  # 36
+    trended = pooled_loss_cost * (1.08**1.5)
     expected_claims = trended + 3.0
-    assert exp.claims_pmpm() == pytest.approx(expected_claims)
+    assert exp.loss_cost() == pytest.approx(expected_claims)
     assert exp.rate() == pytest.approx(expected_claims / 0.80)
 
 
 def test_manual_rate_product():
     man = rm.ManualRate(
-        base_pmpm=500,
+        base_loss_cost=500,
         factors={"area": 1.10, "industry": 0.90, "tier": 1.05},
         target_loss_ratio=0.85,
     )
     claims = 500 * 1.10 * 0.90 * 1.05
-    assert man.claims_pmpm() == pytest.approx(claims)
+    assert man.loss_cost() == pytest.approx(claims)
     assert man.rate() == pytest.approx(claims / 0.85)
 
 
 def test_aggregate_demographic_factor():
-    census = pd.DataFrame({"members": [100, 300], "age_sex": [0.9, 1.2]})
+    census = pd.DataFrame({"count": [100, 300], "age_sex": [0.9, 1.2]})
     assert rm.aggregate_demographic_factor(census, "age_sex") == pytest.approx(
         (100 * 0.9 + 300 * 1.2) / 400
     )
@@ -168,8 +168,8 @@ def test_blend_convex():
 
 def test_indication_buildup():
     ind = rm.RateIndication(
-        experience_claims_pmpm=420,
-        manual_claims_pmpm=460,
+        experience_loss_cost=420,
+        manual_loss_cost=460,
         credibility=0.5,
         current_rate=560,
         target_loss_ratio=0.85,
@@ -177,15 +177,15 @@ def test_indication_buildup():
     )
     blended_claims = 0.5 * 420 + 0.5 * 460  # 440
     indicated_rate = blended_claims / 0.85
-    assert ind.blended_claims_pmpm() == pytest.approx(blended_claims)
+    assert ind.blended_loss_cost() == pytest.approx(blended_claims)
     assert ind.indicated_rate() == pytest.approx(indicated_rate)
     assert ind.indicated_rate_change() == pytest.approx(indicated_rate / 560 - 1)
 
 
 def test_indication_loss_ratio_method():
     ind = rm.RateIndication(
-        experience_claims_pmpm=400,
-        manual_claims_pmpm=420,
+        experience_loss_cost=400,
+        manual_loss_cost=420,
         credibility=1.0,
         current_rate=500,
         target_loss_ratio=0.80,
@@ -200,8 +200,8 @@ def test_indication_loss_ratio_method():
 
 def test_loss_ratio_method_requires_premium():
     ind = rm.RateIndication(
-        experience_claims_pmpm=400,
-        manual_claims_pmpm=420,
+        experience_loss_cost=400,
+        manual_loss_cost=420,
         credibility=0.5,
         current_rate=500,
     )
@@ -232,8 +232,8 @@ def test_decomposition_residual_reconciles():
 
 def test_indication_decomposition_reconciles():
     ind = rm.RateIndication(
-        experience_claims_pmpm=420,
-        manual_claims_pmpm=460,
+        experience_loss_cost=420,
+        manual_loss_cost=460,
         credibility=0.6,
         current_rate=540,
         target_loss_ratio=0.85,
@@ -273,12 +273,12 @@ def test_band_deadband_and_step():
     assert rm.band(0.037, step=0.005) == pytest.approx(0.035)
 
 
-def test_member_level_renewal_rolls_up():
+def test_unit_level_renewal_rolls_up():
     census = pd.DataFrame(
-        {"members": [10, 20], "area": [1.1, 0.9], "tier": [1.0, 1.2]}
+        {"count": [10, 20], "area": [1.1, 0.9], "tier": [1.0, 1.2]}
     )
-    out = rm.member_level_renewal(census, base_rate=400, factor_cols=["area", "tier"])
-    assert out["member_rate"].iloc[0] == pytest.approx(400 * 1.1 * 1.0)
+    out = rm.unit_level_renewal(census, base_rate=400, factor_cols=["area", "tier"])
+    assert out["unit_rate"].iloc[0] == pytest.approx(400 * 1.1 * 1.0)
     assert out["premium"].sum() == pytest.approx(
         400 * 1.1 * 1.0 * 10 + 400 * 0.9 * 1.2 * 20
     )
@@ -364,7 +364,7 @@ def test_sample_claims_has_heavy_tail():
 # --------------------------------------------------------------------------- #
 def test_retention_gross_up_with_fixed_and_variable():
     ret = rm.RetentionLoad(
-        fixed_expense_pmpm=20.0, variable_expense_ratio=0.15, profit_margin=0.05
+        fixed_expense=20.0, variable_expense_ratio=0.15, profit_margin=0.05
     )
     # P = (400 + 20) / (1 - 0.20) = 525
     assert ret.gross_rate(400.0) == pytest.approx(525.0)
@@ -388,7 +388,7 @@ def test_retention_lae_loads_claims():
 
 def test_retention_from_items_sums_variable():
     ret = rm.RetentionLoad.from_items(
-        fixed_expense_pmpm=15.0,
+        fixed_expense=15.0,
         variable_items={"commission": 0.04, "premium_tax": 0.023, "aca_fees": 0.005},
         profit_margin=0.03,
     )
@@ -402,8 +402,8 @@ def test_retention_rejects_infeasible_load():
 
 
 def test_manual_rate_with_retention_overrides_loss_ratio():
-    ret = rm.RetentionLoad(fixed_expense_pmpm=18.0, variable_expense_ratio=0.16, profit_margin=0.04)
-    man = rm.ManualRate(base_pmpm=500, factors={"area": 1.1}, retention=ret)
+    ret = rm.RetentionLoad(fixed_expense=18.0, variable_expense_ratio=0.16, profit_margin=0.04)
+    man = rm.ManualRate(base_loss_cost=500, factors={"area": 1.1}, retention=ret)
     claims = 500 * 1.1
     assert man.rate() == pytest.approx(ret.gross_rate(claims))
     # fixed expense applied AFTER base*relativity (flat per member)
@@ -411,9 +411,9 @@ def test_manual_rate_with_retention_overrides_loss_ratio():
 
 
 def test_indication_with_retention():
-    ret = rm.RetentionLoad(fixed_expense_pmpm=25.0, variable_expense_ratio=0.15, profit_margin=0.05)
+    ret = rm.RetentionLoad(fixed_expense=25.0, variable_expense_ratio=0.15, profit_margin=0.05)
     ind = rm.RateIndication(
-        experience_claims_pmpm=420, manual_claims_pmpm=460,
+        experience_loss_cost=420, manual_loss_cost=460,
         credibility=0.5, current_rate=600, retention=ret,
         trend_total_factor=1.08,
     )
@@ -478,7 +478,7 @@ def test_base_rate_then_retention_reconciles_total_premium():
     # total charged premium must equal the required premium from the equation
     df, base = _book_with_known_base(280.0)
     res = rm.base_rate_from_experience(df, "exposure", "loss", relativity="relativity")
-    ret = rm.RetentionLoad(fixed_expense_pmpm=30.0, variable_expense_ratio=0.12,
+    ret = rm.RetentionLoad(fixed_expense=30.0, variable_expense_ratio=0.12,
                            profit_margin=0.05)
     # charged premium per cell = (base*rel*exp ... ) handled per member:
     total_claims = df["loss"].sum()
@@ -487,7 +487,7 @@ def test_base_rate_then_retention_reconciles_total_premium():
         ret.gross_rate(res.base_loss_cost * row["relativity"]) * row["exposure"]
         for _, row in df.iterrows()
     )
-    required = (total_claims + ret.fixed_expense_pmpm * total_exposure) / (1 - 0.17)
+    required = (total_claims + ret.fixed_expense * total_exposure) / (1 - 0.17)
     assert charged == pytest.approx(required)
 
 
@@ -581,10 +581,10 @@ def test_combine_accepts_buildupresult_inputs():
 
 
 def test_manual_rate_breakdown_reconciles_to_claims():
-    man = rm.ManualRate(base_pmpm=480.0,
+    man = rm.ManualRate(base_loss_cost=480.0,
                         factors={"area": 1.05, "industry": 0.97, "tier": 1.10})
     bd = man.breakdown()
-    assert bd.value == pytest.approx(man.claims_pmpm())
+    assert bd.value == pytest.approx(man.loss_cost())
     # one start + three factors + one checkpoint = 5 rows
     assert len(bd.breakdown) == 5
-    assert bd.subtotal("Manual claims PMPM") == pytest.approx(man.claims_pmpm())
+    assert bd.subtotal("Manual loss cost") == pytest.approx(man.loss_cost())

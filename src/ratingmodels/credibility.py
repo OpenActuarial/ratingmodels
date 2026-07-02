@@ -47,7 +47,7 @@ def limited_fluctuation_credibility(n: float, n_full: float) -> float:
     r"""Partial credibility by the square-root rule, ``min(1, sqrt(n / n_full))``.
 
     Delegates to :func:`actuarialpy.limited_fluctuation_z`. ``n`` and ``n_full``
-    are in consistent units (claims, members, member-months, ...).
+    are in consistent units (claims, policies, exposure units, ...).
     """
     return float(ap.limited_fluctuation_z(n, n_full))
 

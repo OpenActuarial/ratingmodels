@@ -1,8 +1,9 @@
 r"""Renewal actions: turn an indicated rate into a charged renewal rate.
 
 A renewal action applies the indicated change, then the filed constraints
-(caps, floors, rounding), and reports the realised change. A member-level
-helper re-rates a census under new relativities and rolls up to a group total.
+(caps, floors, rounding), and reports the realised change. A row-level
+helper re-rates a census or schedule under new relativities and rolls up to
+a book total.
 """
 from __future__ import annotations
 
@@ -63,15 +64,15 @@ def renew(
     )
 
 
-def member_level_renewal(
+def unit_level_renewal(
     census: pd.DataFrame,
     base_rate: float,
     factor_cols: list[str],
-    member_col: str = "members",
+    count_col: str = "count",
 ) -> pd.DataFrame:
     """Re-rate each census row as ``base_rate * product(factor_cols)``.
 
-    Returns the census with ``member_rate`` and ``premium`` columns; the group
+    Returns the census with ``unit_rate`` and ``premium`` columns; the group
     total is the sum of ``premium``.
     """
     require_positive(base_rate, "base_rate")
@@ -79,6 +80,6 @@ def member_level_renewal(
     rates = []
     for _, row in out.iterrows():
         rates.append(base_rate * product(row[c] for c in factor_cols))
-    out["member_rate"] = rates
-    out["premium"] = out["member_rate"] * out[member_col].astype(float)
+    out["unit_rate"] = rates
+    out["premium"] = out["unit_rate"] * out[count_col].astype(float)
     return out

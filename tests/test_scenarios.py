@@ -5,7 +5,7 @@ from ratingmodels import PricingEvaluation, scenario_frame, uplift_for_target_ma
 
 
 RETENTION = rm.RetentionLoad(
-    fixed_expense_pmpm=8.0,
+    fixed_expense=8.0,
     variable_expense_ratio=0.10,
     profit_margin=0.03,
     lae_ratio=0.02,
@@ -14,10 +14,10 @@ RETENTION = rm.RetentionLoad(
 
 def make_case(**overrides):
     kwargs = dict(
-        claims_pmpm=400.0,
+        loss_cost=400.0,
         current_rate=480.0,
         retention=RETENTION,
-        member_months=12_000.0,
+        exposure=12_000.0,
         persistency=0.85,
     )
     kwargs.update(overrides)
@@ -29,7 +29,7 @@ def make_case(**overrides):
 # --------------------------------------------------------------------------- #
 def test_margin_ratio_at_indicated_rate_equals_profit_margin():
     case = make_case()
-    indicated = RETENTION.gross_rate(case.claims_pmpm)
+    indicated = RETENTION.gross_rate(case.loss_cost)
     change = indicated / case.current_rate - 1.0
     outcome = case.at(change)
     assert outcome.margin_ratio == pytest.approx(RETENTION.profit_margin)
@@ -42,24 +42,24 @@ def test_forward_expense_algebra():
     benefit = 400.0 * 1.02
     admin = 8.0 + 0.10 * premium
     assert outcome.name == "issued"
-    assert outcome.premium_pmpm == pytest.approx(premium)
-    assert outcome.benefit_pmpm == pytest.approx(benefit)
-    assert outcome.admin_pmpm == pytest.approx(admin)
+    assert outcome.premium_rate == pytest.approx(premium)
+    assert outcome.loss_and_lae == pytest.approx(benefit)
+    assert outcome.expense_rate == pytest.approx(admin)
     assert outcome.loss_ratio == pytest.approx(400.0 / premium)
-    assert outcome.gross_margin_pmpm == pytest.approx(premium - benefit)
-    assert outcome.margin_pmpm == pytest.approx(premium - benefit - admin)
-    assert outcome.margin_ratio == pytest.approx(outcome.margin_pmpm / premium)
+    assert outcome.gross_margin_rate == pytest.approx(premium - benefit)
+    assert outcome.margin_rate == pytest.approx(premium - benefit - admin)
+    assert outcome.margin_ratio == pytest.approx(outcome.margin_rate / premium)
 
 
 def test_dollar_and_persistency_fields():
     case = make_case()
     outcome = case.at(0.05)
-    assert outcome.premium == pytest.approx(outcome.premium_pmpm * 12_000.0)
-    assert outcome.margin == pytest.approx(outcome.margin_pmpm * 12_000.0)
+    assert outcome.premium == pytest.approx(outcome.premium_rate * 12_000.0)
+    assert outcome.margin == pytest.approx(outcome.margin_rate * 12_000.0)
     assert outcome.expected_premium == pytest.approx(outcome.premium * 0.85)
     assert outcome.expected_margin == pytest.approx(outcome.margin * 0.85)
 
-    bare = make_case(member_months=None, persistency=None).at(0.05)
+    bare = make_case(exposure=None, persistency=None).at(0.05)
     assert bare.premium is None
     assert bare.expected_margin is None
 
@@ -67,9 +67,9 @@ def test_dollar_and_persistency_fields():
 def test_no_retention_margin_equals_gross_margin():
     case = make_case(retention=None)
     outcome = case.at(0.10)
-    assert outcome.admin_pmpm == pytest.approx(0.0)
-    assert outcome.margin_pmpm == pytest.approx(outcome.gross_margin_pmpm)
-    assert outcome.benefit_pmpm == pytest.approx(case.claims_pmpm)
+    assert outcome.expense_rate == pytest.approx(0.0)
+    assert outcome.margin_rate == pytest.approx(outcome.gross_margin_rate)
+    assert outcome.loss_and_lae == pytest.approx(case.loss_cost)
 
 
 def test_nonpositive_premium_rejected():
@@ -90,13 +90,13 @@ def test_inverse_forward_roundtrip():
 def test_zero_margin_rate_change():
     case = make_case()
     outcome = case.at(case.zero_margin_rate_change())
-    assert outcome.margin_pmpm == pytest.approx(0.0, abs=1e-9)
+    assert outcome.margin_rate == pytest.approx(0.0, abs=1e-9)
 
 
 def test_indication_is_the_profit_margin_special_case():
     case = make_case()
     at_profit = case.premium_for_margin(RETENTION.profit_margin)
-    assert at_profit == pytest.approx(RETENTION.gross_rate(case.claims_pmpm))
+    assert at_profit == pytest.approx(RETENTION.gross_rate(case.loss_cost))
 
 
 def test_no_retention_inverse_reduces_to_loss_ratio_form():
@@ -117,14 +117,14 @@ def test_infeasible_margin_target_rejected():
 # --------------------------------------------------------------------------- #
 def test_from_indication_adopts_blend_and_retention():
     indication = rm.RateIndication(
-        experience_claims_pmpm=420.0,
-        manual_claims_pmpm=380.0,
+        experience_loss_cost=420.0,
+        manual_loss_cost=380.0,
         credibility=0.6,
         current_rate=480.0,
         retention=RETENTION,
     )
-    case = PricingEvaluation.from_indication(indication, member_months=6_000.0)
-    assert case.claims_pmpm == pytest.approx(indication.blended_claims_pmpm())
+    case = PricingEvaluation.from_indication(indication, exposure=6_000.0)
+    assert case.loss_cost == pytest.approx(indication.blended_loss_cost())
     outcome = case.at(indication.indicated_rate_change())
     assert outcome.margin_ratio == pytest.approx(RETENTION.profit_margin)
 
@@ -133,7 +133,7 @@ def test_from_indication_adopts_blend_and_retention():
 # scenario_frame
 # --------------------------------------------------------------------------- #
 def test_scenario_frame_tidy_shape():
-    cases = {"a": make_case(), "b": make_case(claims_pmpm=350.0, persistency=0.5)}
+    cases = {"a": make_case(), "b": make_case(loss_cost=350.0, persistency=0.5)}
     scenarios = {
         "formula": {"a": 0.16, "b": 0.08},
         "issued": {"a": 0.11, "b": 0.05},
@@ -160,11 +160,11 @@ def test_scenario_frame_missing_case_action_raises():
 
 
 def test_scenario_frame_drops_absent_optional_columns():
-    cases = {"a": make_case(member_months=None, persistency=None)}
+    cases = {"a": make_case(exposure=None, persistency=None)}
     frame = scenario_frame(cases, {"plan": 0.1})
     assert "premium" not in frame.columns
     assert "expected_margin" not in frame.columns
-    assert "premium_pmpm" in frame.columns
+    assert "premium_rate" in frame.columns
 
 
 # --------------------------------------------------------------------------- #
@@ -172,9 +172,9 @@ def test_scenario_frame_drops_absent_optional_columns():
 # --------------------------------------------------------------------------- #
 def small_book():
     return {
-        "a": make_case(claims_pmpm=400.0, current_rate=480.0, member_months=12_000.0, persistency=0.85),
-        "b": make_case(claims_pmpm=360.0, current_rate=430.0, member_months=4_000.0, persistency=0.60),
-        "c": make_case(claims_pmpm=300.0, current_rate=390.0, member_months=7_000.0, persistency=0.90),
+        "a": make_case(loss_cost=400.0, current_rate=480.0, exposure=12_000.0, persistency=0.85),
+        "b": make_case(loss_cost=360.0, current_rate=430.0, exposure=4_000.0, persistency=0.60),
+        "c": make_case(loss_cost=300.0, current_rate=390.0, exposure=7_000.0, persistency=0.90),
     }
 
 

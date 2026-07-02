@@ -32,7 +32,7 @@ question: **what rate should we charge, and why did it change?**
   are estimated *jointly* (correcting for correlation between rating variables)
   rather than one-way. No statsmodels dependency — the IRLS is in-package.
 - **Constraints & renewal** — rate caps/floors, banding, rounding, corridors,
-  and member-level re-rating.
+  and unit-level re-rating.
 - **Pricing scenarios & margin** — evaluate a case at *any* rate action
   (issued, post-concession, plan) with the same expense algebra as the
   gross-up: premium, gross margin (benefit tier), margin after retention
@@ -74,13 +74,13 @@ exp = rm.ExperienceRate(
     trend_annual=0.075,
     trend_years=1.5,            # experience midpoint -> rating midpoint
     pooled_excess=excess,
-    pooling_charge_pmpm=4.00,
+    pooling_charge=4.00,
     target_loss_ratio=0.85,
 )
 
 # --- manual side -----------------------------------------------------------
 man = rm.ManualRate(
-    base_pmpm=480,
+    base_loss_cost=480,
     factors={"area": 1.05, "industry": 0.97, "tier": 1.10},
     target_loss_ratio=0.85,
 )
@@ -89,8 +89,8 @@ man = rm.ManualRate(
 z = rm.limited_fluctuation_credibility(n=96_000, n_full=120_000)
 
 ind = rm.RateIndication(
-    experience_claims_pmpm=exp.claims_pmpm(),
-    manual_claims_pmpm=man.claims_pmpm(),
+    experience_loss_cost=exp.loss_cost(),
+    manual_loss_cost=man.loss_cost(),
     credibility=z,
     current_rate=560,
     target_loss_ratio=0.85,
@@ -154,7 +154,7 @@ base.base_loss_cost        # average loss cost / average relativity
 
 # gross claims up to a charged rate; the loss ratio falls out
 retention = rm.RetentionLoad.from_items(
-    fixed_expense_pmpm=22.0,
+    fixed_expense=22.0,
     variable_items={"commission": 0.03, "premium_tax": 0.023, "aca_fees": 0.005},
     profit_margin=0.03,
 )

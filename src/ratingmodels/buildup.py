@@ -2,7 +2,7 @@ r"""Ordered rate build-up with an audit trail.
 
 Every group rate is assembled the same way: start from a base claim cost and
 apply an ordered sequence of operations -- multiply by a relativity, add or
-subtract a dollar amount (a copay credit, a per-member fee), apply a factor to
+subtract a dollar amount (a copay credit, a per-unit fee), apply a factor to
 only a segment of the cost -- recording labeled subtotals along the way, then
 combine streams (in-/out-of-network by participation, medical + drug). This
 module provides that grammar; it ships **no factor values**. The numbers are

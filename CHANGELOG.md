@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.4.1
+
+### Changed
+
+- Depend on `actuarialpy~=0.37.0`, which removes the core domain-sugar
+  metrics and the automatic `_pmpm`-style output suffixes.
+- Quickstart output labels are stated per exposure unit instead of PMPM.
+
+## 0.4.0
+
+### Changed
+
+- Package-wide rename to domain-agnostic vocabulary before first release
+  (0.3.0 was built but never published). The per-member-per-month suffix
+  disappears from every required name: `experience_claims_pmpm` /
+  `manual_claims_pmpm` / `blended_claims_pmpm` become
+  `experience_loss_cost` / `manual_loss_cost` / `blended_loss_cost`;
+  `ExperienceRate.claims_pmpm()` / `pooled_claims_pmpm()` become
+  `loss_cost()` / `pooled_loss_cost()`; `pooling_charge_pmpm` ->
+  `pooling_charge`; `base_pmpm` -> `base_loss_cost`; `manual_pmpm` ->
+  `manual_loss_cost`; `RetentionLoad.fixed_expense_pmpm` ->
+  `fixed_expense`. All rates and costs are documented per unit of exposure
+  (member months, policy months, earned exposures, ...), with domain terms
+  appearing only as examples. `member_level_renewal` becomes
+  `unit_level_renewal` with `count_col` (default `"count"`) and a
+  `unit_rate` output column.
+- The `scenarios` module follows suit: `PricingEvaluation(loss_cost, ...,
+  exposure=...)`, and `ScenarioOutcome` reports `premium_rate`,
+  `loss_and_lae`, `expense_rate`, `gross_margin_rate`, and `margin_rate`
+  per exposure unit alongside the dollar and persistency-weighted fields.
+- The `actuarialpy` dependency pin moves to `~=0.36.0` alongside the core
+  rename so the two packages stay co-installable.
+
 ## 0.3.0
 
 ### Added
