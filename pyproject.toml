@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ratingmodels"
 version = "0.4.1"
-description = "Actuarial pricing and rate-indication tools for experience-rated insurance portfolios."
+description = "Pricing and rate-indication tools for actuarial modeling in Python."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
