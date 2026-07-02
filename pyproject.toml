@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ratingmodels"
-version = "0.4.1"
+version = "0.4.2"
 description = "Pricing and rate-indication tools for actuarial modeling in Python."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,7 +38,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.22",
     "pandas>=1.4",
-    "actuarialpy~=0.37.0",
+    "actuarialpy~=0.38.0",
 ]
 
 [project.optional-dependencies]

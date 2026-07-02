@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2
+
+### Changed
+
+- Depend on `actuarialpy~=0.38.0`, whose decomposition components are renamed
+  to `frequency_trend` / `severity_trend` / `frequency_effect` /
+  `severity_effect`.
+
 ## 0.4.1
 
 ### Changed
