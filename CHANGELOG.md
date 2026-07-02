@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- A `scenarios` module for management pricing around the indication:
+  - `PricingEvaluation.at(rate_change)` evaluates a case at **any** rate
+    action -- issued, post-concession, plan -- and reports premium, loss
+    ratio, gross margin (benefit tier), margin after retention expense,
+    and margin ratio, using the same expense algebra as `RetentionLoad`.
+    At the indicated rate the margin ratio equals the retention's
+    `profit_margin` exactly.
+  - `premium_for_margin` / `rate_change_for_margin` generalize the
+    indication's inverse solve to **any** margin target, closed-form:
+    `P(m) = (L(1+lae) + F) / (1 - V - m)`. Zero-margin and plan-target
+    premiums are this solve at `m = 0` and `m = plan`; the standard
+    indication is the special case `m = profit_margin`.
+  - Optional `member_months` and `persistency` on an evaluation produce
+    dollar and renewal-probability-weighted (`expected_*`) outputs -- the
+    deterministic counterpart of a retention Bernoulli.
+  - `scenario_frame(cases, scenarios)` evaluates named actions across a
+    book into one tidy long table (one row per case x scenario), so any
+    cohort rollup or key-case exhibit is a groupby or pivot of library
+    output. Scenario names are caller vocabulary; a per-case action
+    mapping must cover every case (missing is an error, never a skip).
+  - `uplift_for_target_margin` solves the exhibit input "rate actions
+    must be X% higher to hold the target margin." Because the aggregate
+    margin ratio is a ratio of functions affine in the uplift, both the
+    multiplicative and additive solves are closed-form (the algebra is in
+    the docstring), with explicit feasibility errors instead of a solver
+    loop.
+
+### Changed
+
+- The `actuarialpy` dependency pin moves to `~=0.35.0` alongside the core
+  release so the two packages stay co-installable from clean
+  environments.
+
 ## 0.2.0
 
 ### Fixed

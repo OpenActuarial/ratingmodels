@@ -33,6 +33,16 @@ question: **what rate should we charge, and why did it change?**
   rather than one-way. No statsmodels dependency — the IRLS is in-package.
 - **Constraints & renewal** — rate caps/floors, banding, rounding, corridors,
   and member-level re-rating.
+- **Pricing scenarios & margin** — evaluate a case at *any* rate action
+  (issued, post-concession, plan) with the same expense algebra as the
+  gross-up: premium, gross margin (benefit tier), margin after retention
+  expense, margin ratio; the closed-form rate for *any* margin target
+  (zero-margin and plan-target premiums, with the standard indication as the
+  `m = profit_margin` special case); persistency-weighted expected dollars;
+  tidy long scenario tables (`scenario_frame`) so cohort rollups and key-case
+  exhibits are pivots of library output; and a closed-form uniform uplift
+  (`uplift_for_target_margin`) answering "actions must be X% higher to hold
+  the book's target margin."
 
 Dependencies are `numpy`, `pandas`, and `actuarialpy` (which supplies the shared credibility primitives).
 

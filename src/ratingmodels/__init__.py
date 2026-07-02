@@ -85,6 +85,12 @@ from .relativity import (
     one_way_relativities,
 )
 from .renewal import RenewalAction, member_level_renewal, renew
+from .scenarios import (
+    PricingEvaluation,
+    ScenarioOutcome,
+    scenario_frame,
+    uplift_for_target_margin,
+)
 from .trend import (
     apply_trend,
     combine_trend,
@@ -170,4 +176,9 @@ __all__ = [
     "renew",
     "RenewalAction",
     "member_level_renewal",
+    # pricing scenarios / margin
+    "PricingEvaluation",
+    "ScenarioOutcome",
+    "scenario_frame",
+    "uplift_for_target_margin",
 ]
