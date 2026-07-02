@@ -18,7 +18,7 @@ The experience rate develops a group's own claims into a charged rate:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 

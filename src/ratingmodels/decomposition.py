@@ -71,7 +71,7 @@ def decompose_rate_change(
     if np.any(vals <= 0):
         raise ValueError("all factors must be positive")
 
-    fac = dict(zip(names, vals))
+    fac = dict(zip(names, vals, strict=True))
     prod = product(vals)
     if total_factor is None:
         total = prod

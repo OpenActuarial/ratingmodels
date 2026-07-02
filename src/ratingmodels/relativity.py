@@ -26,6 +26,8 @@ relative to the base (reference) level, whose relativity is 1.
 """
 from __future__ import annotations
 
+import warnings
+
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
@@ -144,6 +146,13 @@ class GLMRelativities:
     base_value_: float = field(default=None, init=False, repr=False)
     n_iter_: int = field(default=0, init=False, repr=False)
     deviance_: float = field(default=np.nan, init=False, repr=False)
+    converged_: bool = field(default=False, init=False, repr=False)
+    null_deviance_: float = field(default=np.nan, init=False, repr=False)
+    pearson_chi2_: float = field(default=np.nan, init=False, repr=False)
+    dispersion_: float = field(default=np.nan, init=False, repr=False)
+    se_: pd.Series = field(default=None, init=False, repr=False)
+    cov_params_: pd.DataFrame = field(default=None, init=False, repr=False)
+    _design_info_: dict = field(default=None, init=False, repr=False)
 
     # ----- internals ----- #
     def _power(self) -> float:
@@ -156,12 +165,13 @@ class GLMRelativities:
             return float(self.var_power)
         raise ValueError(f"unknown family {self.family!r}")
 
-    def _build_design(self, data, predictors, base_levels=None):
+    def _build_design(self, data, predictors, base_levels=None, continuous=()):
         """One-hot encode predictors (dropping the base level); add intercept.
 
         The base (reference) level for each predictor is, in order of
         preference: the value supplied in ``base_levels``, otherwise the most
         populous level (the standard choice, giving the most stable intercept).
+        ``continuous`` columns enter as numeric covariates unchanged.
         """
         base_levels = dict(base_levels or {})
         cols = {}
@@ -184,6 +194,11 @@ class GLMRelativities:
                 if lvl == base:
                     continue
                 cols[f"{var}::{lvl}"] = (cats == lvl).astype(float)
+        for var in continuous:
+            vals = data[var].to_numpy(dtype=float)
+            if not np.all(np.isfinite(vals)):
+                raise ValueError(f"continuous covariate {var!r} has non-finite values")
+            cols[var] = vals
         X = pd.DataFrame(cols, index=data.index)
         X.insert(0, "Intercept", 1.0)
         return X, chosen
@@ -197,6 +212,7 @@ class GLMRelativities:
         offset: str | None = None,
         weights: str | None = None,
         base_levels: Mapping[str, object] | None = None,
+        continuous: Sequence[str] = (),
     ) -> "GLMRelativities":
         r"""Fit relativities for ``predictors`` against ``response``.
 
@@ -207,7 +223,9 @@ class GLMRelativities:
         predictors use their most populous level as the base.
         """
         p = self._power()
-        X_df, base_levels_used = self._build_design(data, list(predictors), base_levels)
+        X_df, base_levels_used = self._build_design(
+            data, list(predictors), base_levels, continuous=tuple(continuous)
+        )
         X = X_df.to_numpy(dtype=float)
         y = data[response].to_numpy(dtype=float)
         n, p_dim = X.shape
@@ -243,22 +261,64 @@ class GLMRelativities:
             WX = X * w[:, None]
             xtwx = X.T @ WX
             xtwz = X.T @ (w * z)
-            beta = np.linalg.solve(xtwx, xtwz)
+            try:
+                beta = np.linalg.solve(xtwx, xtwz)
+            except np.linalg.LinAlgError:
+                warnings.warn(
+                    "design matrix is rank deficient (aliased levels); "
+                    "using a least-squares solution",
+                    stacklevel=2,
+                )
+                beta = np.linalg.lstsq(xtwx, xtwz, rcond=None)[0]
             eta = X @ beta + eta_offset
             eta = np.clip(eta, -30, 30)  # guard against overflow
             mu = np.exp(eta)
 
             dev = self._deviance(y, mu, prior_w, p)
-            if np.isfinite(dev) and abs(dev - dev_old) <= self.tol * (abs(dev_old) + self.tol):
+            if (
+                np.isfinite(dev)
+                and np.isfinite(dev_old)
+                and abs(dev - dev_old) <= self.tol * (abs(dev_old) + self.tol)
+            ):
                 self.n_iter_ = it
+                self.converged_ = True
                 break
             dev_old = dev
         else:
             self.n_iter_ = self.max_iter
+            self.converged_ = False
 
         self.coefficients_ = pd.Series(beta, index=X_df.columns)
         self.deviance_ = float(dev_old if not np.isfinite(dev) else dev)
         self.base_value_ = float(np.exp(beta[0]))
+
+        # ----- inference: Pearson dispersion and quasi-likelihood covariance -----
+        pearson = float(np.sum(prior_w * (y - mu) ** 2 / mu**p))
+        dof = max(n - p_dim, 1)
+        self.pearson_chi2_ = pearson
+        self.dispersion_ = pearson / dof
+        try:
+            cov = self.dispersion_ * np.linalg.inv(xtwx)
+            self.cov_params_ = pd.DataFrame(cov, index=X_df.columns, columns=X_df.columns)
+            self.se_ = pd.Series(np.sqrt(np.maximum(np.diag(cov), 0.0)), index=X_df.columns)
+        except np.linalg.LinAlgError:
+            self.cov_params_ = None
+            self.se_ = None
+
+        # ----- null deviance: intercept (+ offset) only -----
+        mu0 = np.full(n, max(np.sum(prior_w * y) / np.sum(prior_w), 1e-12))
+        if exposure is not None or offset is not None:
+            # weighted-mean rate on the offset scale
+            rate0 = np.sum(prior_w * y) / np.sum(prior_w * np.exp(eta_offset))
+            mu0 = max(rate0, 1e-12) * np.exp(eta_offset)
+        self.null_deviance_ = self._deviance(y, mu0, prior_w, p)
+
+        self._design_info_ = {
+            "predictors": list(predictors),
+            "base_levels": dict(base_levels_used),
+            "continuous": list(continuous),
+            "columns": list(X_df.columns),
+        }
 
         # assemble relativities per variable (base level = 1.0)
         rels: dict[str, pd.Series] = {}
@@ -290,13 +350,52 @@ class GLMRelativities:
         c = mu ** (2 - p) / (2 - p)
         return float(2 * np.sum(w * (a - b + c)))
 
-    def predict(self, data: pd.DataFrame, exposure: str | None = None) -> np.ndarray:
-        """Predicted mean for new rows using the fitted relativities."""
+    def predict(
+        self,
+        data: pd.DataFrame,
+        exposure: str | None = None,
+        offset: str | None = None,
+    ) -> np.ndarray:
+        """Predicted mean for new rows.
+
+        Categorical levels unseen in fitting fall back to the base level
+        (relativity 1.0). ``exposure`` multiplies the mean; ``offset`` is a
+        column already on the log scale.
+        """
         if self.coefficients_ is None:
             raise RuntimeError("model is not fit")
-        mu = np.full(len(data), self.base_value_, dtype=float)
-        for var, rel in self.relativities_.items():
-            mu *= np.array([rel.get(v, 1.0) for v in data[var]], dtype=float)
+        info = self._design_info_
+        beta = self.coefficients_
+        eta = np.full(len(data), float(beta.iloc[0]), dtype=float)
+        for var in info["predictors"]:
+            vals = data[var]
+            for name, coef in beta.items():
+                if name.startswith(f"{var}::"):
+                    lvl = name.split("::", 1)[1]
+                    eta += float(coef) * (vals == lvl).to_numpy(dtype=float)
+        for var in info["continuous"]:
+            eta += float(beta[var]) * data[var].to_numpy(dtype=float)
+        if offset is not None:
+            eta += data[offset].to_numpy(dtype=float)
+        eta = np.clip(eta, -30, 30)
+        mu = np.exp(eta)
         if exposure is not None:
             mu *= data[exposure].to_numpy(dtype=float)
         return mu
+
+    def summary(self) -> pd.DataFrame:
+        """Coefficient table: estimate, quasi-likelihood SE, z, relativity.
+
+        Standard errors use the Pearson-estimated dispersion (quasi-likelihood
+        / quasi-Poisson style), which is the robust default for pricing data
+        where overdispersion is the norm.
+        """
+        if self.coefficients_ is None:
+            raise RuntimeError("model is not fit")
+        out = pd.DataFrame({"coef": self.coefficients_})
+        if self.se_ is not None:
+            out["se"] = self.se_
+            with np.errstate(divide="ignore", invalid="ignore"):
+                out["z"] = out["coef"] / out["se"]
+        out["relativity"] = np.exp(out["coef"])
+        return out

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.2.0
+
+### Fixed
+- **`GLMRelativities` converged after exactly one IRLS iteration** and
+  therefore returned wrong coefficients for every model fit since the class
+  was introduced. The deviance convergence test compared against an infinite
+  initial deviance (`|dev - inf| <= tol * inf` is `inf <= inf`, which is
+  true), so the loop always exited on the first pass. Fitted "estimates" were
+  a single reweighted-least-squares step from the crude starting value --
+  close enough to pass the existing tolerance-based tests, wrong enough to
+  fail exact ones. The one-way Poisson MLE now matches observed rate ratios
+  to 1e-8 and Poisson/Gamma/Tweedie fits match `statsmodels` reference
+  results to at least 1e-5 (verification only; `statsmodels` is not a
+  dependency). `n_iter_` reports true iterations and a `converged_` flag is
+  exposed.
+- The `actuarialpy` dependency pin is raised to `~=0.34.0` (the previous
+  `~=0.33.0` pin excluded the current core release, making the two packages
+  co-uninstallable from clean environments).
+- Rank-deficient (aliased) designs no longer raise from `numpy.linalg.solve`;
+  they fall back to a least-squares solution with a warning.
+- Factor decomposition zips names and values strictly, surfacing length
+  mismatches instead of silently truncating.
+
+### Added
+- **Continuous covariates in `GLMRelativities`** via `fit(...,
+  continuous=[...])` -- age, trend, and other numeric rating variables enter
+  the linear predictor directly alongside the categorical relativities.
+- **Post-fit inference**: `se_` (quasi-likelihood standard errors using the
+  Pearson-estimated dispersion, the robust default for overdispersed pricing
+  data), `cov_params_`, `dispersion_`, `pearson_chi2_`, `null_deviance_`, and
+  a `summary()` coefficient table (estimate, SE, z, relativity).
+- `predict` rebuilt on the stored design (supports continuous covariates and
+  an `offset=` column); unseen categorical levels fall back to the base level
+  as before.
+- **Model evaluation module** (`ratingmodels.evaluation`):
+  `gini_coefficient` (exposure-weighted ordered-Lorenz Gini, normalized by
+  the perfect model by default) and `lift_table` (equal-exposure bands with
+  predicted/actual means and lift) -- the standard segmentation diagnostics
+  for a rating plan.
+
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).

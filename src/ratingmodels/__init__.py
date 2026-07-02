@@ -75,6 +75,10 @@ from .manual_rate import (
     aggregate_demographic_factor,
     manual_pmpm,
 )
+from .evaluation import (
+    gini_coefficient,
+    lift_table,
+)
 from .relativity import (
     FactorTable,
     GLMRelativities,
@@ -120,6 +124,8 @@ __all__ = [
     "FactorTable",
     "one_way_relativities",
     "GLMRelativities",
+    "gini_coefficient",
+    "lift_table",
     # manual / experience
     "ManualRate",
     "manual_pmpm",

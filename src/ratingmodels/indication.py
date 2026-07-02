@@ -20,7 +20,7 @@ indication against a trend-only ("no experience") indication:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ._utils import require_positive, require_unit_interval
 from .blend import blend
