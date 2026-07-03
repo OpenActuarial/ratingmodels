@@ -28,7 +28,7 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 
-from ._utils import product, require_positive
+from ._utils import Numeric, maybe_float, product, require_positive
 
 
 @dataclass
@@ -56,9 +56,8 @@ def _relativity_vector(
     if relativity is not None:
         rel = data[relativity].to_numpy(dtype=float)
     elif factor_cols:
-        rel = np.array(
-            [product(row[c] for c in factor_cols) for _, row in data.iterrows()],
-            dtype=float,
+        rel = np.asarray(
+            product([data[c].to_numpy(dtype=float) for c in factor_cols]), dtype=float
         )
     else:
         raise ValueError("provide either `relativity` or `factor_cols`")
@@ -72,12 +71,24 @@ def average_relativity(
     exposure: str,
     relativity: str | None = None,
     factor_cols: Sequence[str] | None = None,
-) -> float:
+    by: str | Sequence[str] | None = None,
+) -> "float | pd.Series":
     r"""Exposure-weighted average relativity :math:`\bar r = \sum e_i r_i / \sum e_i`.
 
     Supply relativities either as a single ``relativity`` column or as
-    ``factor_cols`` (per-row factors that are multiplied together).
+    ``factor_cols`` (per-row factors that are multiplied together). With
+    ``by`` (a column or list of columns), the average is computed within
+    each group and a Series indexed by group is returned.
     """
+    if by is not None:
+        return (
+            data.groupby(by, sort=True)
+            .apply(
+                lambda g: average_relativity(g, exposure, relativity, factor_cols),
+                include_groups=False,
+            )
+            .rename("average_relativity")
+        )
     e = data[exposure].to_numpy(dtype=float)
     if np.any(e <= 0):
         raise ValueError("exposures must be positive")
@@ -91,7 +102,8 @@ def base_rate_from_experience(
     loss: str,
     relativity: str | None = None,
     factor_cols: Sequence[str] | None = None,
-) -> BaseRateResult:
+    by: str | Sequence[str] | None = None,
+) -> "BaseRateResult | pd.DataFrame":
     r"""Indicated base loss cost from book experience (off-balance method).
 
     Returns :math:`B = \sum_i L_i / \sum_i e_i r_i` together with the average
@@ -110,7 +122,25 @@ def base_rate_from_experience(
     factor_cols : sequence of str, optional
         Columns of individual rating factors to multiply into :math:`r_i`
         (used when ``relativity`` is not supplied).
+    by : str or sequence of str, optional
+        Segment column(s). When given, a base rate is backed out **within
+        each segment** and the result is a DataFrame indexed by segment with
+        columns ``base_loss_cost``, ``average_relativity``,
+        ``average_loss_cost``, ``total_exposure`` -- one call, one base rate
+        per row.
     """
+    if by is not None:
+        def _one(g: pd.DataFrame) -> pd.Series:
+            r = base_rate_from_experience(g, exposure, loss, relativity, factor_cols)
+            return pd.Series(
+                {
+                    "base_loss_cost": r.base_loss_cost,
+                    "average_relativity": r.average_relativity,
+                    "average_loss_cost": r.average_loss_cost,
+                    "total_exposure": r.total_exposure,
+                }
+            )
+        return data.groupby(by, sort=True).apply(_one, include_groups=False)
     e = data[exposure].to_numpy(dtype=float)
     if np.any(e <= 0):
         raise ValueError("exposures must be positive")
@@ -128,24 +158,29 @@ def base_rate_from_experience(
     )
 
 
-def off_balance_factor(current_avg_relativity: float, new_avg_relativity: float) -> float:
-    r"""Off-balance correction :math:`\bar r_0 / \bar r_1` from revising relativities."""
-    require_positive(current_avg_relativity, "current_avg_relativity")
-    require_positive(new_avg_relativity, "new_avg_relativity")
-    return current_avg_relativity / new_avg_relativity
+def off_balance_factor(
+    current_avg_relativity: Numeric, new_avg_relativity: Numeric
+) -> Numeric:
+    r"""Off-balance correction :math:`\bar r_0 / \bar r_1` from revising relativities.
+
+    Elementwise: Series of segment averages give a Series of corrections.
+    """
+    current_avg_relativity = require_positive(current_avg_relativity, "current_avg_relativity")
+    new_avg_relativity = require_positive(new_avg_relativity, "new_avg_relativity")
+    return maybe_float(current_avg_relativity / new_avg_relativity)
 
 
 def rebalance_base_rate(
-    current_base: float,
-    current_avg_relativity: float,
-    new_avg_relativity: float,
-    overall_change: float = 0.0,
-) -> float:
+    current_base: Numeric,
+    current_avg_relativity: Numeric,
+    new_avg_relativity: Numeric,
+    overall_change: Numeric = 0.0,
+) -> Numeric:
     r"""Off-balanced new base rate :math:`B_1 = B_0 (\bar r_0/\bar r_1)(1+\Delta)`.
 
     Holds the overall premium level neutral when relativities change, then
     applies the intended overall rate change ``overall_change`` (:math:`\Delta`).
     """
-    require_positive(current_base, "current_base")
+    current_base = require_positive(current_base, "current_base")
     factor = off_balance_factor(current_avg_relativity, new_avg_relativity)
-    return current_base * factor * (1.0 + overall_change)
+    return maybe_float(current_base * factor * (1.0 + overall_change))

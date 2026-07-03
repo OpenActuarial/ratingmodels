@@ -96,7 +96,7 @@ def main() -> None:
     print(f"indicated change      : {ind.indicated_rate_change():+.2%}")
     # the loss ratio is an OUTPUT of the retention stack, not an input
     print(f"implied loss ratio    : {retention.implied_loss_ratio(blended_claims):.3f}"
-          "  (note: large-group ACA MLR floor is 0.85)")
+          "  (note: 0.85 matches, e.g., the US large-group ACA MLR floor)")
 
     # ----- why did the rate move? ----------------------------------------- #
     print("\n=== Rate-change decomposition ===")

@@ -59,7 +59,14 @@ class FactorTable:
     def lookup(self, level) -> float:
         return float(self.factors.get(level, self.default))
 
-    def apply(self, levels: Sequence) -> np.ndarray:
+    def apply(self, levels: Sequence) -> "np.ndarray | pd.Series":
+        """Vectorized lookup: relativity for every element of ``levels``.
+
+        A Series in gives a Series out on the same index (unknown levels get
+        ``default``); any other sequence gives a numpy array.
+        """
+        if isinstance(levels, pd.Series):
+            return levels.map(lambda x: self.factors.get(x, self.default)).astype(float)
         return np.array([self.lookup(x) for x in levels], dtype=float)
 
     def normalized(self, base_level) -> "FactorTable":

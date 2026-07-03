@@ -6,53 +6,73 @@ Indicated rates are rarely charged as-is. Common adjustments:
 * **Banding** -- snapping small changes to zero, or to discrete steps.
 * **Rounding** to a filed precision.
 * **Corridors** -- limiting how far a rate may move over successive renewals.
+
+Every function is elementwise under the vectorization contract: pass whole
+columns of current and indicated rates and get a column of constrained rates
+back, with the pandas index preserved.
 """
 from __future__ import annotations
 
 import numpy as np
 
+from ._utils import (
+    Numeric,
+    first_series,
+    match_index,
+    maybe_float,
+    require_positive,
+)
 
-def cap_change(change: float, cap: float | None = None, floor: float | None = None) -> float:
-    """Clip a proportional rate change to ``[floor, cap]`` (either may be None)."""
-    out = float(change)
+
+def cap_change(
+    change: Numeric, cap: Numeric | None = None, floor: Numeric | None = None
+) -> Numeric:
+    """Clip a proportional rate change to ``[floor, cap]`` (either may be None).
+
+    ``cap`` and ``floor`` may themselves be vectors for per-row limits.
+    """
+    out = np.asarray(change, dtype=float)
     if cap is not None:
-        out = min(out, float(cap))
+        out = np.minimum(out, np.asarray(cap, dtype=float))
     if floor is not None:
-        out = max(out, float(floor))
-    return out
+        out = np.maximum(out, np.asarray(floor, dtype=float))
+    template = first_series(change, cap, floor)
+    if out.ndim:
+        return match_index(out, template) if template is not None else out
+    return float(out[()])
 
 
 def apply_cap(
-    current_rate: float,
-    indicated_rate: float,
-    cap: float | None = None,
-    floor: float | None = None,
-) -> float:
-    """Return the charged rate after capping the implied change."""
-    if current_rate <= 0:
-        raise ValueError("current_rate must be positive")
+    current_rate: Numeric,
+    indicated_rate: Numeric,
+    cap: Numeric | None = None,
+    floor: Numeric | None = None,
+) -> Numeric:
+    """Return the charged rate after capping the implied change, elementwise."""
+    current_rate = require_positive(current_rate, "current_rate")
     change = indicated_rate / current_rate - 1.0
-    return current_rate * (1.0 + cap_change(change, cap, floor))
+    return maybe_float(current_rate * (1.0 + cap_change(change, cap, floor)))
 
 
-def band(change: float, deadband: float = 0.0, step: float | None = None) -> float:
+def band(change: Numeric, deadband: float = 0.0, step: float | None = None) -> Numeric:
     """Snap a change to zero within ``deadband``; optionally to ``step`` grid."""
-    out = 0.0 if abs(change) <= deadband else float(change)
+    arr = np.asarray(change, dtype=float)
+    out = np.where(np.abs(arr) <= deadband, 0.0, arr)
     if step is not None and step > 0:
-        out = round(out / step) * step
-    return out
+        out = np.round(out / step) * step
+    return maybe_float(match_index(out, change) if out.ndim else out[()])
 
 
-def round_rate(rate: float, ndigits: int = 2) -> float:
-    """Round a rate to a filed precision (default cents)."""
-    return float(np.round(rate, ndigits))
+def round_rate(rate: Numeric, ndigits: int = 2) -> Numeric:
+    """Round a rate to a filed precision (default cents), elementwise."""
+    return maybe_float(np.round(rate, ndigits))
 
 
 def corridor(
-    current_rate: float,
-    indicated_rate: float,
+    current_rate: Numeric,
+    indicated_rate: Numeric,
     max_up: float,
     max_down: float,
-) -> float:
+) -> Numeric:
     """Limit a single renewal move to ``[-max_down, +max_up]`` proportionally."""
     return apply_cap(current_rate, indicated_rate, cap=max_up, floor=-abs(max_down))

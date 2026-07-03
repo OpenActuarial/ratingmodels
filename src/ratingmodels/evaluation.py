@@ -57,7 +57,9 @@ def _lorenz_gini(order_key, actual, exposure):
     return float(1.0 - 2.0 * area)
 
 
-def gini_coefficient(actual, predicted, exposure=None, normalize: bool = True) -> float:
+def gini_coefficient(
+    actual, predicted, exposure=None, normalize: bool = True, by=None
+) -> "float | pd.Series":
     """Ordered-Lorenz Gini of ``predicted`` as a risk ranker for ``actual``.
 
     Parameters
@@ -72,7 +74,16 @@ def gini_coefficient(actual, predicted, exposure=None, normalize: bool = True) -
         If True (default), divide by the Gini of the perfect model that sorts
         by ``actual`` itself, so 1.0 means perfect segmentation and 0.0 means
         no segmentation. If False, return the raw ordered-Lorenz Gini.
+    by : array-like, optional
+        Group labels aligned with ``actual``. When given, the Gini is
+        computed within each group and a Series indexed by group is
+        returned -- one call scores every segment of a validation frame.
     """
+    if by is not None:
+        return _grouped(
+            by, actual, predicted, exposure,
+            lambda a, p, w: gini_coefficient(a, p, w, normalize),
+        ).rename("gini")
     a, p, w = _as_arrays(actual, predicted, exposure)
     g = _lorenz_gini(p, a, w)
     if not normalize:
@@ -83,11 +94,25 @@ def gini_coefficient(actual, predicted, exposure=None, normalize: bool = True) -
     return float(g / g_perfect)
 
 
+def _grouped(by, actual, predicted, exposure, fn) -> pd.Series:
+    """Apply ``fn(actual, predicted, exposure)`` within each group of ``by``."""
+    a, p, w = _as_arrays(actual, predicted, exposure)
+    keys = np.asarray(by)
+    if keys.shape != a.shape:
+        raise ValueError("by must match actual/predicted in length")
+    frame = pd.DataFrame({"a": a, "p": p, "w": w, "g": keys})
+    return frame.groupby("g", sort=True).apply(
+        lambda d: fn(d["a"].to_numpy(), d["p"].to_numpy(), d["w"].to_numpy()),
+        include_groups=False,
+    ).rename_axis(index=None)
+
+
 def lift_table(
     actual,
     predicted,
     exposure=None,
     n_bands: int = 10,
+    by=None,
 ) -> pd.DataFrame:
     """Exposure-weighted lift table: records banded by predicted risk.
 
@@ -101,8 +126,21 @@ def lift_table(
     -------
     pandas.DataFrame
         Indexed 1..n_bands with columns ``n``, ``exposure``,
-        ``predicted_mean``, ``actual_mean``, ``lift``.
+        ``predicted_mean``, ``actual_mean``, ``lift``. With ``by`` (group
+        labels aligned with ``actual``), one table is built per group and
+        the result carries a ``(group, band)`` MultiIndex.
     """
+    if by is not None:
+        a, p, w = _as_arrays(actual, predicted, exposure)
+        keys = np.asarray(by)
+        if keys.shape != a.shape:
+            raise ValueError("by must match actual/predicted in length")
+        frame = pd.DataFrame({"a": a, "p": p, "w": w, "g": keys})
+        pieces = {
+            g: lift_table(d["a"].to_numpy(), d["p"].to_numpy(), d["w"].to_numpy(), n_bands)
+            for g, d in frame.groupby("g", sort=True)
+        }
+        return pd.concat(pieces, names=["group", "band"])
     a, p, w = _as_arrays(actual, predicted, exposure)
     if n_bands < 2:
         raise ValueError("n_bands must be at least 2")

@@ -8,16 +8,21 @@ question: **what rate should we charge, and why did it change?**
 
 ## What it does
 
+- **Columns in, columns out** — every numeric argument takes a scalar or a
+  column (Series/array) under one contract: scalar in, float out; column in,
+  column out on the same index. A whole book prices in one call, and grouped
+  questions take `by=`.
 - **Credibility** — limited fluctuation (square-root rule), Bühlmann, and
   empirical Bühlmann-Straub with exposure weights.
-- **Trend** — midpoint-to-midpoint factors; utilization / unit-cost split.
+- **Trend** — midpoint-to-midpoint factors; frequency / severity split.
 - **Manual rating** — base rate × relativities, loaded to a charged rate.
 - **Experience rating** — pooling of large claims, trend, pooling charge,
   benefit/demographic adjustments, loading.
 - **Rate build-up** — an ordered, auditable evaluator (multiply / add-dollar /
   segment-conditional) with labeled subtotals and a reconciling breakdown, plus
-  par/non-par participation blending and medical+drug combining. Supplies the
-  *grammar* of a manual build-up; the factor values stay yours.
+  two-stream participation blending and additive stream combining (a health
+  book's par/non-par and medical + drug). Supplies the *grammar* of a manual
+  build-up; the factor values stay yours.
 - **Base rate & off-balance** — indicated base loss cost from book experience
   (base × relativities reproduces book losses); off-balance correction and
   base rebalancing when relativities are revised.
@@ -35,7 +40,7 @@ question: **what rate should we charge, and why did it change?**
   and unit-level re-rating.
 - **Pricing scenarios & margin** — evaluate a case at *any* rate action
   (issued, post-concession, plan) with the same expense algebra as the
-  gross-up: premium, gross margin (benefit tier), margin after retention
+  gross-up: premium, gross margin (loss tier), margin after retention
   expense, margin ratio; the closed-form rate for *any* margin target
   (zero-margin and plan-target premiums, with the standard indication as the
   `m = profit_margin` special case); persistency-weighted expected dollars;
@@ -67,14 +72,15 @@ pytest
 import ratingmodels as rm
 
 # --- experience side -------------------------------------------------------
-capped, excess = rm.pool_claims(group_claims, pooling_point=250_000)
+large_claims = [612_000, 340_000, 128_000, 96_500]      # this group's largest claims
+capped, excess = rm.pool_claims(large_claims, pooling_point=250_000)
 exp = rm.ExperienceRate(
     incurred_claims=4_200_000,
-    exposure=96_000,            # member-months
+    exposure=9_600,             # exposure units (member-months here)
     trend_annual=0.075,
     trend_years=1.5,            # experience midpoint -> rating midpoint
     pooled_excess=excess,
-    pooling_charge=4.00,
+    pooling_charge=38.00,       # book-level charge for the pooled layer
     target_loss_ratio=0.85,
 )
 
@@ -86,13 +92,13 @@ man = rm.ManualRate(
 )
 
 # --- credibility and indication -------------------------------------------
-z = rm.limited_fluctuation_credibility(n=96_000, n_full=120_000)
+z = rm.limited_fluctuation_credibility(n=9_600, n_full=12_000)
 
 ind = rm.RateIndication(
     experience_loss_cost=exp.loss_cost(),
     manual_loss_cost=man.loss_cost(),
     credibility=z,
-    current_rate=560,
+    current_rate=520,
     target_loss_ratio=0.85,
     trend_total_factor=exp.trend_factor(),
     benefit_factor=1.00,
@@ -106,11 +112,14 @@ print(f"indicated change : {ind.indicated_rate_change():+.2%}")
 print(ind.rate_change_decomposition().to_frame())
 
 # apply a renewal cap
-action = rm.renew(current_rate=560, indicated_rate=ind.indicated_rate(), cap=0.15)
+action = rm.renew(current_rate=520, indicated_rate=ind.indicated_rate(), cap=0.05)
 print(f"proposed (capped): {action.proposed_rate:.2f} ({action.proposed_change:+.2%})")
 ```
 
 ### Rate build-up with an audit trail
+
+The labels and streams below are one health book's; the engine is
+domain-agnostic and ships no values.
 
 ```python
 import ratingmodels as rm

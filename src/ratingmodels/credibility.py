@@ -21,7 +21,7 @@ import pandas as pd
 
 import actuarialpy as ap
 
-from ._utils import require_positive
+from ._utils import Numeric, maybe_float, require_nonnegative, require_positive
 
 
 def full_credibility_standard(
@@ -38,33 +38,34 @@ def full_credibility_standard(
     >>> round(full_credibility_standard(0.90, 0.05))
     1082
     """
-    return float(
+    return maybe_float(
         ap.full_credibility_claims(confidence=p, tolerance=k, severity_cv=cv_severity)
     )
 
 
-def limited_fluctuation_credibility(n: float, n_full: float) -> float:
+def limited_fluctuation_credibility(n: Numeric, n_full: Numeric) -> Numeric:
     r"""Partial credibility by the square-root rule, ``min(1, sqrt(n / n_full))``.
 
     Delegates to :func:`actuarialpy.limited_fluctuation_z`. ``n`` and ``n_full``
     are in consistent units (claims, policies, exposure units, ...).
+    Elementwise: a Series of ``n`` returns a Series of ``Z``.
     """
-    return float(ap.limited_fluctuation_z(n, n_full))
+    return maybe_float(ap.limited_fluctuation_z(n, n_full))
 
 
-def buhlmann_credibility(exposure: float, epv: float, vhm: float) -> float:
+def buhlmann_credibility(exposure: Numeric, epv: Numeric, vhm: Numeric) -> Numeric:
     r"""Bühlmann credibility factor :math:`Z = n / (n + k)`, ``k = EPV/VHM``.
 
     This is the credibility *factor* given structural parameters; the
     greatest-accuracy *estimators* (fitting EPV/VHM from data) live in
     :class:`actuarialpy.Buhlmann` / :class:`actuarialpy.BuhlmannStraub`.
+    Elementwise: a Series of exposures returns a Series of ``Z``.
     """
-    if exposure < 0:
-        raise ValueError("exposure must be non-negative")
-    require_positive(epv, "epv")
-    require_positive(vhm, "vhm")
+    exposure = require_nonnegative(exposure, "exposure")
+    epv = require_positive(epv, "epv")
+    vhm = require_positive(vhm, "vhm")
     k = epv / vhm
-    return float(exposure / (exposure + k))
+    return maybe_float(exposure / (exposure + k))
 
 
 @dataclass

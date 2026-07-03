@@ -27,7 +27,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from ._utils import require_nonnegative
+import numpy as np
+
+from ._utils import Numeric, maybe_float, require_nonnegative, safe_divide
 
 
 @dataclass
@@ -50,17 +52,19 @@ class RetentionLoad:
         Loss adjustment expense as a percentage of claims. Default 0.
     """
 
-    fixed_expense: float = 0.0
-    variable_expense_ratio: float = 0.0
-    profit_margin: float = 0.0
-    lae_ratio: float = 0.0
+    fixed_expense: Numeric = 0.0
+    variable_expense_ratio: Numeric = 0.0
+    profit_margin: Numeric = 0.0
+    lae_ratio: Numeric = 0.0
 
     def __post_init__(self) -> None:
-        require_nonnegative(self.fixed_expense, "fixed_expense")
-        require_nonnegative(self.variable_expense_ratio, "variable_expense_ratio")
-        require_nonnegative(self.profit_margin, "profit_margin")
-        require_nonnegative(self.lae_ratio, "lae_ratio")
-        if self.variable_and_profit >= 1.0:
+        self.fixed_expense = require_nonnegative(self.fixed_expense, "fixed_expense")
+        self.variable_expense_ratio = require_nonnegative(
+            self.variable_expense_ratio, "variable_expense_ratio"
+        )
+        self.profit_margin = require_nonnegative(self.profit_margin, "profit_margin")
+        self.lae_ratio = require_nonnegative(self.lae_ratio, "lae_ratio")
+        if np.any(np.asarray(self.variable_and_profit) >= 1.0):
             raise ValueError(
                 "variable_expense_ratio + profit_margin must be < 1; "
                 "the rate would be undefined or negative"
@@ -80,7 +84,7 @@ class RetentionLoad:
         "aca_fees": 0.005, "admin_pct": 0.06}``) is summed into the variable
         expense ratio.
         """
-        total_variable = float(sum((variable_items or {}).values()))
+        total_variable = maybe_float(sum((variable_items or {}).values()))
         return cls(
             fixed_expense=fixed_expense,
             variable_expense_ratio=total_variable,
@@ -93,34 +97,36 @@ class RetentionLoad:
         """Combined percent-of-premium load :math:`V + Q`."""
         return self.variable_expense_ratio + self.profit_margin
 
-    def gross_rate(self, loss_cost: float) -> float:
-        r"""Gross a loss cost up to a charged rate via :math:`(L(1+\text{lae})+F)/(1-V-Q)`."""
-        require_nonnegative(loss_cost, "loss_cost")
-        numerator = loss_cost * (1.0 + self.lae_ratio) + self.fixed_expense
-        return numerator / (1.0 - self.variable_and_profit)
+    def gross_rate(self, loss_cost: Numeric) -> Numeric:
+        r"""Gross a loss cost up to a charged rate via :math:`(L(1+\text{lae})+F)/(1-V-Q)`.
 
-    def implied_loss_ratio(self, loss_cost: float) -> float:
+        Elementwise: a Series of loss costs (and/or Series-valued loads for
+        per-row retention structures) returns a Series of charged rates.
+        """
+        loss_cost = require_nonnegative(loss_cost, "loss_cost")
+        numerator = loss_cost * (1.0 + self.lae_ratio) + self.fixed_expense
+        return maybe_float(numerator / (1.0 - self.variable_and_profit))
+
+    def implied_loss_ratio(self, loss_cost: Numeric) -> Numeric:
         """Loss ratio implied at a given claims level (claims / gross rate).
 
         With a non-zero fixed expense this varies with the claims level; with
         only percentage loads it equals ``1 - variable_expense_ratio -
         profit_margin``.
         """
-        require_nonnegative(loss_cost, "loss_cost")
-        if loss_cost == 0:
-            return 0.0
-        return loss_cost / self.gross_rate(loss_cost)
+        loss_cost = require_nonnegative(loss_cost, "loss_cost")
+        return safe_divide(loss_cost, self.gross_rate(loss_cost))
 
-    def expense_and_profit_ratio(self, loss_cost: float) -> float:
+    def expense_and_profit_ratio(self, loss_cost: Numeric) -> Numeric:
         """Share of the gross rate going to expense and profit (1 - loss ratio)."""
-        return 1.0 - self.implied_loss_ratio(loss_cost)
+        return maybe_float(1.0 - self.implied_loss_ratio(loss_cost))
 
 
-def gross_rate(loss_cost: float, retention: RetentionLoad) -> float:
+def gross_rate(loss_cost: Numeric, retention: RetentionLoad) -> Numeric:
     """Functional form of :meth:`RetentionLoad.gross_rate`."""
     return retention.gross_rate(loss_cost)
 
 
-def permissible_loss_ratio(retention: RetentionLoad, loss_cost: float) -> float:
+def permissible_loss_ratio(retention: RetentionLoad, loss_cost: Numeric) -> Numeric:
     """Functional form of :meth:`RetentionLoad.implied_loss_ratio`."""
     return retention.implied_loss_ratio(loss_cost)

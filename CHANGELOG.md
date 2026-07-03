@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.5.0 - 2026-07-03
+
+Vectorization release: the whole per-risk layer now follows one contract --
+scalar in, float out (unchanged behavior); Series/array in, Series/array out,
+elementwise, with pandas indexes preserved and scalars broadcasting. A book
+prices in one call.
+
+### Added
+- **Vectorized rating.** `ManualRate`, `ExperienceRate`, `RateIndication`,
+  `PricingEvaluation`, `RetentionLoad`, and `RenewalAction`/`renew` accept
+  Series/array values in every numeric field; derived quantities
+  (`loss_cost`, `rate`, `indicated_rate_change`, margins, ...) return Series
+  on the shared index. `blend`, credibility factors, trend, loading,
+  constraint, and off-balance functions are elementwise, and `trend`'s date
+  helpers accept datetime Series for per-row periods.
+- **Vectorized build-ups.** `BuildUp`/`evaluate` accept vector operands
+  (including per-row `segment_multiply` weights and `participation_blend`
+  shares); `value` and subtotals return as Series and `breakdown` switches
+  to tidy long format with an `entity` column.
+- **Vectorized decomposition.** `decompose_rate_change` accepts vector
+  drivers/totals; `factors` and `contributions` become per-case DataFrames
+  and `to_frame()` stacks to a tidy `(case, driver)` table. Flows through
+  `RateIndication.rate_change_decomposition()`.
+- **Vectorized scenarios.** A `PricingEvaluation` built from columns is the
+  book: `at()` evaluates every case at once, `ScenarioOutcome.to_frame()`
+  returns one tidy row per case, and `scenario_frame` /
+  `uplift_for_target_margin` accept a vector evaluation directly (the
+  uplift solve agrees with the mapping form to floating point).
+- **Grouped aggregations.** `by=` on `base_rate_from_experience` (a
+  DataFrame of base rates, one per segment), `average_relativity`,
+  `aggregate_demographic_factor`, `pool_claims` / `expected_excess_charge`,
+  `gini_coefficient`, and `lift_table` (per-group tables under a
+  `(group, band)` MultiIndex).
+- `RenewalAction.to_frame()` for tidy renewal runs; per-row caps/floors in
+  `cap_change` / `apply_cap` / `renew`.
+- `FactorTable.apply` preserves a Series index.
+- Elementwise validation everywhere: one bad row fails the call and the
+  error names the offending index label. Reducing helpers (`product`, the
+  build-up engine, `blend`, trend) raise on mismatched Series indexes
+  instead of silently aligning to NaN.
+
+### Fixed
+- `renew` marked an action as `capped` whenever cent-rounding moved the
+  rate; the flag now reflects only a binding cap or floor.
+- `ManualRate.with_factor` silently dropped `retention`; it is now carried
+  to the new instance.
+- `_utils.product` reduced over *all* elements when handed multiple factor
+  vectors, which made naive vectorization of the manual-rate path return
+  plausible but wrong numbers; it now reduces across factors elementwise.
+- `unit_level_renewal` and the `factor_cols` path of
+  `base_rate_from_experience` no longer iterate rows in Python.
+
+### Changed
+- `combine_trend` / `split_total_trend` parameters renamed to the
+  standardized decomposition vocabulary: `util_trend` / `cost_trend` are now
+  `frequency_trend` / `severity_trend` (matching actuarialpy 0.38's
+  `frequency_trend * severity_trend` identity). Positional calls are
+  unaffected; keyword calls need the new names.
+- `participation_blend`'s default checkpoint label is now
+  `"Blended Claim Cost"` (was the health-specific `"PPO Claim Cost"`);
+  pass `label=` for a domain name. Docstrings and the README complete the
+  domain-agnostic vocabulary sweep -- health terms remain only as attributed
+  examples of caller-side dialects.
+- Version floor unchanged; no other public API removed. Scalar calls return
+  the same types and values as 0.4.x throughout.
+
 ## 0.4.4
 
 ### Added

@@ -12,17 +12,17 @@ Quick start:
     import ratingmodels as rm
 
     exp = rm.ExperienceRate(
-        incurred_claims=4_200_000, exposure=96_000,
+        incurred_claims=4_200_000, exposure=9_600,
         trend_annual=0.075, trend_years=1.5,
         pooled_excess=350_000, pooling_charge=4.0,
         target_loss_ratio=0.85,
     )
     man = rm.ManualRate(base_loss_cost=480, factors={"area": 1.05, "industry": 0.97})
-    z = rm.limited_fluctuation_credibility(n=96_000, n_full=120_000)
+    z = rm.limited_fluctuation_credibility(n=9_600, n_full=12_000)
     ind = rm.RateIndication(
         experience_loss_cost=exp.loss_cost(),
         manual_loss_cost=man.loss_cost(),
-        credibility=z, current_rate=560, target_loss_ratio=0.85,
+        credibility=z, current_rate=520, target_loss_ratio=0.85,
         trend_total_factor=exp.trend_factor(),
     )
     round(ind.indicated_rate_change(), 4)
