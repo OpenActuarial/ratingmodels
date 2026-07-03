@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.4.3
+## 0.4.4
 
 ### Added
 
 - Pricing-algebra, GLM/evaluation, and build-up/renewal test suites; a
   `pricing_scenarios` example; example scripts are executed by the test
   suite.
+- Worked-example regression test for the experience-to-renewal page.
 
 ### Changed
 
