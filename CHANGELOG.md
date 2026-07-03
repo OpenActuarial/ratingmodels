@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3
+
+### Added
+
+- Pricing-algebra, GLM/evaluation, and build-up/renewal test suites; a
+  `pricing_scenarios` example; example scripts are executed by the test
+  suite.
+
+### Changed
+
+- More descriptive package `description` metadata.
+
 ## 0.4.2
 
 ### Changed
