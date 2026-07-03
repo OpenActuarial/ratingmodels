@@ -618,3 +618,17 @@ def test_full_pipeline_dataframe_in_dataframe_out():
             trend_total_factor=float(exp.trend_factor()),
         )
         assert out.loc[g, "change"] == pytest.approx(one.indicated_rate_change())
+
+
+def test_plain_lists_accepted_everywhere():
+    """Plain Python lists satisfy the contract (coerced to ndarray)."""
+    L = [0.05, 0.06, 0.07]
+    P = [500.0, 480.0, 610.0]
+    assert isinstance(rm.trend_factor(L, 1.5), np.ndarray)
+    assert isinstance(rm.apply_trend(P, L, 1.0), np.ndarray)
+    assert isinstance(rm.combine_trend(L, 0.02), np.ndarray)
+    assert isinstance(rm.split_total_trend(0.10, L), np.ndarray)
+    np.testing.assert_allclose(
+        rm.combine_trend(L, 0.02),
+        [rm.combine_trend(x, 0.02) for x in L], rtol=1e-12,
+    )

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1 - 2026-07-03
+
+### Fixed
+- The trend functions (`trend_factor`, `apply_trend`, `combine_trend`,
+  `split_total_trend`) raised `TypeError` on plain Python lists/tuples;
+  every array-like is now coerced to ndarray up front, matching the rest of
+  the library.
+
+### Added
+- Worked-example regression test pinning the docs-site
+  "pricing a book, in columns" page numbers (`test_worked_example_book.py`),
+  alongside a list-input regression test across the trend functions.
+
 ## 0.5.0 - 2026-07-03
 
 Vectorization release: the whole per-risk layer now follows one contract --

@@ -25,7 +25,7 @@ from typing import Union
 import numpy as np
 import pandas as pd
 
-from ._utils import Numeric, common_index, is_arraylike, maybe_float
+from ._utils import Numeric, as_numeric, common_index, is_arraylike, maybe_float
 
 DateLike = Union[str, date, datetime, pd.Series]
 
@@ -77,7 +77,9 @@ def period_midpoint(start: DateLike, end: DateLike):
 def trend_factor(annual_trend: Numeric, years: Numeric) -> Numeric:
     r""":math:`(1 + \text{annual\_trend})^{\text{years}}`, elementwise."""
     common_index([annual_trend, years])
-    base = 1.0 + (annual_trend if is_arraylike(annual_trend) else float(annual_trend))
+    annual_trend = as_numeric(annual_trend, "annual_trend")
+    years = as_numeric(years, "years")
+    base = 1.0 + annual_trend
     if np.any(np.asarray(base) <= 0):
         raise ValueError("annual_trend must exceed -1")
     return maybe_float(base**years)
@@ -97,14 +99,21 @@ def trend_factor_between(
 def apply_trend(value: Numeric, annual_trend: Numeric, years: Numeric) -> Numeric:
     """Trend a value forward (or back, for negative ``years``), elementwise."""
     common_index([value, annual_trend, years])
+    value = as_numeric(value, "value")
     return maybe_float(value * trend_factor(annual_trend, years))
 
 
 def combine_trend(frequency_trend: Numeric, severity_trend: Numeric) -> Numeric:
     r"""Combine frequency and severity trends: :math:`(1+t_f)(1+t_s)-1`."""
+    common_index([frequency_trend, severity_trend])
+    frequency_trend = as_numeric(frequency_trend, "frequency_trend")
+    severity_trend = as_numeric(severity_trend, "severity_trend")
     return maybe_float((1 + frequency_trend) * (1 + severity_trend) - 1)
 
 
 def split_total_trend(total_trend: Numeric, frequency_trend: Numeric) -> Numeric:
     """Back out the severity trend implied by a total and a frequency trend."""
+    common_index([total_trend, frequency_trend])
+    total_trend = as_numeric(total_trend, "total_trend")
+    frequency_trend = as_numeric(frequency_trend, "frequency_trend")
     return maybe_float((1 + total_trend) / (1 + frequency_trend) - 1)
