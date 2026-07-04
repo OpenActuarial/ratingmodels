@@ -52,7 +52,6 @@ from ._utils import (
     as_numeric,
     common_index,
     is_arraylike,
-    maybe_float,
     require_unit_interval,
 )
 

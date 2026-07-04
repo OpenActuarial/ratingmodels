@@ -25,7 +25,7 @@ from typing import Union
 import numpy as np
 import pandas as pd
 
-from ._utils import Numeric, as_numeric, common_index, is_arraylike, maybe_float
+from ._utils import Numeric, as_numeric, common_index, maybe_float
 
 DateLike = Union[str, date, datetime, pd.Series]
 

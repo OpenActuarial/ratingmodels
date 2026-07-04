@@ -76,3 +76,41 @@ TRUE_RELATIVITIES = {
     "industry": {"retail": 1.0, "manufacturing": 1.4, "tech": 0.75},
     "tier": {"bronze": 1.0, "silver": 1.15, "gold": 1.3},
 }
+
+
+def sample_frequency_severity_data(n: int = 4000, seed: int = 0) -> pd.DataFrame:
+    """A claims dataset with *different* frequency and severity structure.
+
+    Extends :func:`sample_rating_data`: counts are Poisson with the same
+    frequency relativities, and aggregate amounts are sums of Gamma severities
+    whose mean varies by ``industry`` and ``tier`` only (``area`` drives
+    frequency but not severity) -- so a frequency-severity fit should recover
+    different tables for the two components. Returns columns ``area``,
+    ``industry``, ``tier``, ``exposure``, ``claim_count``, ``claim_amount``.
+    """
+    rng = np.random.default_rng(seed)
+    df = sample_rating_data(n=n, seed=seed).rename(columns={"claims": "claim_count"})
+
+    sev_ind = {"retail": 1.0, "manufacturing": 0.9, "tech": 1.3}
+    sev_tier = {"bronze": 1.0, "silver": 1.1, "gold": 1.25}
+    base_sev = 900.0
+    shape = 2.0  # Gamma shape per claim; sum of k claims ~ Gamma(k * shape)
+    mean_sev = (
+        base_sev
+        * df["industry"].map(sev_ind).to_numpy()
+        * df["tier"].map(sev_tier).to_numpy()
+    )
+    counts = df["claim_count"].to_numpy()
+    amount = np.zeros(len(df))
+    pos = counts > 0
+    amount[pos] = rng.gamma(shape * counts[pos], mean_sev[pos] / shape)
+    df["claim_amount"] = amount
+    return df
+
+
+#: the true severity relativities used by sample_frequency_severity_data
+TRUE_SEVERITY_RELATIVITIES = {
+    "base": 900.0,
+    "industry": {"retail": 1.0, "manufacturing": 0.9, "tech": 1.3},
+    "tier": {"bronze": 1.0, "silver": 1.1, "gold": 1.25},
+}

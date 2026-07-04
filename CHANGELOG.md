@@ -1,5 +1,116 @@
 # Changelog
 
+## 0.6.0 - 2026-07-04
+
+Validation release: a fitted model is now inspectable and testable, not just
+usable. GLM estimation is delegated to statsmodels while ratingmodels keeps
+the actuarial layer; the model exposes residuals and relativity intervals,
+out-of-sample evaluation has first-class tables and leakage-safe splits, and
+pure-premium modeling, credibility smoothing, and dislocation reporting round
+out the workflow from fit to filed change. Everything is domain-agnostic and
+follows the columns-in, columns-out contract.
+
+### Changed
+- **GLM estimation now delegates to `statsmodels.GLM`** (new runtime
+  dependency: `statsmodels>=0.14`; the in-package IRLS solver is removed).
+  A mature estimator owns the numerics — solver, convergence, covariance,
+  and the fitted null model — while ratingmodels owns what is actuarial:
+  the design encoding and base-level semantics, coefficient-to-relativity
+  conversion, prediction with unseen-level fallback, residuals on arbitrary
+  frames, and the exhibits. The `GLMRelativities` API is unchanged;
+  dispersion is estimated from the Pearson chi-square (`scale="X2"`,
+  quasi-likelihood) for every family, matching the 0.5.x convention. The
+  fitted results object is exposed as `results_`, so nothing statistical is
+  walled off (`results_.get_influence()`, `results_.get_prediction(...)`,
+  Wald tests, ...). Perfect (saturated) fits report `converged_ = True`
+  rather than inheriting statsmodels' perfect-separation flag. The family
+  deviance and variance-power math stays in-package because evaluation on
+  arbitrary frames needs it (`residuals`, `compare_models`).
+
+### Added
+- **GLM diagnostics.** `GLMRelativities.residuals(data, kind=...)` returns
+  per-row `deviance`, `pearson`, `standardized` (leverage-adjusted via the
+  IRLS hat values), or raw `response` residuals as an index-aligned Series;
+  column names default to those used at fit. Squared Pearson and deviance
+  residuals reproduce `pearson_chi2_` and `deviance_` exactly.
+  `relativity_table(confidence_level=0.95)` reports every relativity with its
+  quasi-likelihood confidence interval, `exp(coef ± z·se)`, in one tidy
+  `(variable, level)` frame — base levels shown at 1.0 with no interval,
+  continuous covariates as per-unit factors. `deviance_explained_` exposes
+  `1 - deviance/null_deviance`.
+- **Validation tables.** `calibration_table` bands records by prediction at
+  equal exposure and reports per-band A/E — actual and predicted treated
+  symmetrically, on the total scale. `actual_expected_table` is the segment
+  exhibit: totals, per-unit means, and A/E overall, by one variable, or by
+  many at once (tidy `(variable, level)` output). `compare_models` scores
+  fitted GLMs side by side on one frame — deviance, deviance explained,
+  Gini, A/E, calibration error — for honest out-of-sample comparison.
+- **Validation splits.** `random_split`, `group_split` (groups stay whole on
+  one side; optional exposure weighting of the target share), and
+  `temporal_split` (out-of-time at a cutoff). `(train, test)` DataFrames with
+  row order preserved; empty sides raise rather than pass silently. No
+  scikit-learn dependency.
+- **Frequency–severity models.** `FrequencySeverityModel` composes a count
+  GLM (Poisson default, exposure offset) and a severity GLM (Gamma default,
+  fit on claim rows only, count-weighted) into a pure-premium model:
+  `frequency_prediction`, `severity_prediction`,
+  `pure_premium_prediction` (exactly their product), per-variable
+  `combined_relativities()` (frequency x severity), `base_value_`, and a
+  stacked `summary()`. Rows with amounts but no counts raise; claims closed
+  at zero are excluded from severity with a warning.
+- **Credibility-smoothed relativities.** `credibility_relativities` shrinks
+  one-way factors toward a prior: `Z·observed + (1-Z)·prior`, with `Z` from
+  empirical Bühlmann–Straub across levels (via the `actuarialpy` estimators)
+  or the limited-fluctuation square-root rule. Returns level weight,
+  observed, credibility, prior, and blended relativity in one frame;
+  optional rebase to a base level. `collapse_sparse_levels` folds levels
+  below an exposure/count threshold into an `"Other"` bucket and returns the
+  recode plus a summary for applying it to future data.
+- **Rate dislocation.** `rate_dislocation` bands a book by rate change
+  (empty bands kept, boundary changes snap to edges within float tolerance,
+  `(low, high]`) with premium, exposure share, and premium-weighted average
+  change per band. `constraint_impact` quantifies the indicated-vs-proposed
+  gap: premium shortfall/excess, cases capped, realized vs indicated change,
+  and the remaining rate action still owed — with `by=` for per-segment
+  attribution.
+- `datasets.sample_frequency_severity_data` — synthetic claims with
+  *different* frequency and severity structure, so component recovery is
+  testable; true severity relativities exported alongside.
+- **`to_factor_tables()`** on `GLMRelativities` (per categorical predictor)
+  and `FrequencySeverityModel` (from the combined pure-premium
+  relativities): the bridge from estimation to application — named
+  `FactorTable` lookups with `default=1.0` for unknown levels, matching
+  `predict`'s unseen-level fallback, ready for the build-up and renewal
+  machinery.
+- **Adapter contract tests.** The suite fits statsmodels *independently*
+  (its own family objects, offset construction, weights) on the exact
+  design matrix `GLMRelativities` built, and asserts the marshaling
+  conventions and the in-package evaluation math — residuals, relativity
+  intervals, family deviance — agree across Poisson, Gamma, and Tweedie.
+
+### Fixed
+- `null_deviance_` (and therefore `deviance_explained_`) for **non-Poisson
+  families with offsets/exposure**: 0.5.x used the weighted mean rate
+  `sum(wy)/sum(w·e^o)` as the null model — the intercept-only MLE for
+  Poisson but not for Gamma/Tweedie. The null deviance now comes from the
+  actually fitted intercept(+offset)-only model, correct for every family
+  (Poisson results unchanged). Found while cross-checking the old solver
+  against statsmodels; a contract test pins the behavior.
+- **Docs:** the guidance that exposure-as-log-offset is "the natural choice
+  for counts and pure premium" was corrected. Offsets are for *aggregate*
+  responses (counts, total amounts); a *rate* response (already divided by
+  exposure) takes exposure as variance `weights` instead. The two coincide
+  only for Poisson (p = 1); the weights form is the one consistent with a
+  response averaged over independent claims, and is exactly how the
+  severity component of `FrequencySeverityModel` is fit.
+
+### Notes
+- Standard errors and intervals remain quasi-likelihood (Pearson dispersion)
+  throughout; no penalized fits are offered because shrinkage would
+  invalidate that covariance — credibility smoothing is the supported
+  stabilizer. Should regularization at scale ever become a requirement,
+  `glum` is the designated engine for that job, behind this same API.
+
 ## 0.5.1 - 2026-07-03
 
 ### Fixed

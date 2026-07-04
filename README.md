@@ -33,11 +33,30 @@ question: **what rate should we charge, and why did it change?**
   loss-ratio indication methods.
 - **Rate-change decomposition** — multiplicative and percentage-point
   contribution-to-change with an explicit residual.
-- **GLM relativities** — Poisson / Gamma / Tweedie GLMs fit by IRLS, so factors
-  are estimated *jointly* (correcting for correlation between rating variables)
-  rather than one-way. No statsmodels dependency — the IRLS is in-package.
+- **GLM relativities** — Poisson / Gamma / Tweedie GLMs, so factors are
+  estimated *jointly* (correcting for correlation between rating variables)
+  rather than one-way. Estimation is delegated to `statsmodels.GLM`;
+  ratingmodels owns the actuarial layer — design encoding, base levels,
+  relativities and their confidence intervals, factor tables — and exposes
+  the fitted statsmodels results as `results_` for everything else.
+- **GLM diagnostics** — deviance / Pearson / standardized residuals,
+  a relativity table with confidence intervals for every level, and
+  deviance explained; the fit is inspectable, not just usable.
+- **Frequency–severity models** — `FrequencySeverityModel` pairs a count GLM
+  and a severity GLM (fit on claims, count-weighted) into one pure-premium
+  model whose relativities are the product of the parts.
+- **Credibility-smoothed relativities** — one-way factors shrunk toward a
+  prior by Bühlmann–Straub or limited-fluctuation credibility, plus
+  sparse-level collapsing; the actuarial answer to thin cells.
+- **Validation** — leakage-safe `random_split` / `group_split` /
+  `temporal_split`, calibration and actual-to-expected tables, ordered-Lorenz
+  Gini, lift tables, and a `compare_models` scorecard for honest out-of-sample
+  comparison.
 - **Constraints & renewal** — rate caps/floors, banding, rounding, corridors,
   and unit-level re-rating.
+- **Rate dislocation** — band a book by rate change with premium in each band
+  (`rate_dislocation`) and quantify what caps and concessions cost against
+  the indication (`constraint_impact`).
 - **Pricing scenarios & margin** — evaluate a case at *any* rate action
   (issued, post-concession, plan) with the same expense algebra as the
   gross-up: premium, gross margin (loss tier), margin after retention
@@ -49,7 +68,7 @@ question: **what rate should we charge, and why did it change?**
   (`uplift_for_target_margin`) answering "actions must be X% higher to hold
   the book's target margin."
 
-Dependencies are `numpy`, `pandas`, and `actuarialpy` (which supplies the shared credibility primitives).
+Dependencies are `numpy`, `pandas`, `actuarialpy` (which supplies the shared credibility primitives), and `statsmodels` (which supplies GLM estimation).
 
 ## Installation
 

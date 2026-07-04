@@ -75,16 +75,24 @@ from .manual_rate import (
     aggregate_demographic_factor,
     manual_loss_cost,
 )
+from .dislocation import constraint_impact, rate_dislocation
 from .evaluation import (
+    actual_expected_table,
+    calibration_table,
+    compare_models,
     gini_coefficient,
     lift_table,
 )
+from .freqsev import FrequencySeverityModel
 from .relativity import (
     FactorTable,
     GLMRelativities,
+    collapse_sparse_levels,
+    credibility_relativities,
     one_way_relativities,
 )
 from .renewal import RenewalAction, unit_level_renewal, renew
+from .splits import group_split, random_split, temporal_split
 from .scenarios import (
     PricingEvaluation,
     ScenarioOutcome,
@@ -130,8 +138,18 @@ __all__ = [
     "FactorTable",
     "one_way_relativities",
     "GLMRelativities",
+    "FrequencySeverityModel",
+    "credibility_relativities",
+    "collapse_sparse_levels",
+    # evaluation / validation
     "gini_coefficient",
     "lift_table",
+    "calibration_table",
+    "actual_expected_table",
+    "compare_models",
+    "random_split",
+    "group_split",
+    "temporal_split",
     # manual / experience
     "ManualRate",
     "manual_loss_cost",
@@ -173,6 +191,8 @@ __all__ = [
     "band",
     "round_rate",
     "corridor",
+    "rate_dislocation",
+    "constraint_impact",
     "renew",
     "RenewalAction",
     "unit_level_renewal",
