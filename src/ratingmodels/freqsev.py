@@ -70,6 +70,8 @@ class FrequencySeverityModel:
         severity_predictors: Sequence[str] | None = None,
         frequency_continuous: Sequence[str] = (),
         severity_continuous: Sequence[str] | None = None,
+        frequency_interactions: Sequence[tuple] = (),
+        severity_interactions: Sequence[tuple] | None = None,
         base_levels: Mapping[str, object] | None = None,
     ) -> "FrequencySeverityModel":
         """Fit both components from one claims frame.
@@ -91,6 +93,12 @@ class FrequencySeverityModel:
         frequency_continuous, severity_continuous : sequence of str
             Continuous covariates per component (severity defaults to the
             frequency list).
+        frequency_interactions, severity_interactions : sequence of pairs
+            Interaction terms per component, as in
+            :meth:`GLMRelativities.fit` (severity defaults to the frequency
+            list). Categorical x categorical interactions surface in
+            :meth:`combined_relativities` under an ``"a:b"`` key with a
+            MultiIndex of level pairs.
         base_levels : mapping, optional
             Predictor -> reference level, shared by both components.
 
@@ -106,6 +114,8 @@ class FrequencySeverityModel:
             severity_predictors = list(frequency_predictors)
         if severity_continuous is None:
             severity_continuous = list(frequency_continuous)
+        if severity_interactions is None:
+            severity_interactions = list(frequency_interactions)
         for reserved in (_SEV_RESPONSE, _SEV_WEIGHT):
             if reserved in data.columns:
                 raise ValueError(f"column name {reserved!r} is reserved")
@@ -128,6 +138,7 @@ class FrequencySeverityModel:
             exposure=exposure,
             base_levels=base_levels,
             continuous=tuple(frequency_continuous),
+            interactions=tuple(frequency_interactions),
         )
 
         pos = (counts > 0) & (amounts > 0)
@@ -150,6 +161,7 @@ class FrequencySeverityModel:
             weights=_SEV_WEIGHT,
             base_levels=base_levels,
             continuous=tuple(severity_continuous),
+            interactions=tuple(severity_interactions),
         )
 
         self._fit_info_ = {
@@ -217,10 +229,12 @@ class FrequencySeverityModel:
         for var in seen:
             f = f_rels.get(var)
             s = s_rels.get(var)
-            levels = list(f.index) if f is not None else []
-            if s is not None:
-                levels += [lvl for lvl in s.index if lvl not in levels]
-            idx = pd.Index(levels, name=var)
+            if f is not None and s is not None:
+                idx = f.index.union(s.index, sort=False)
+            else:
+                idx = (f if f is not None else s).index
+            if not isinstance(idx, pd.MultiIndex):
+                idx = pd.Index(idx, name=var)
             f_al = (f.reindex(idx) if f is not None else pd.Series(index=idx, dtype=float)).fillna(1.0)
             s_al = (s.reindex(idx) if s is not None else pd.Series(index=idx, dtype=float)).fillna(1.0)
             out[var] = pd.DataFrame(
@@ -235,12 +249,19 @@ class FrequencySeverityModel:
         :meth:`combined_relativities` (frequency x severity) with
         ``default=1.0`` for unknown levels -- the pure-premium plan you
         would actually apply, ready for the build-up and renewal machinery.
+        Interaction terms are excluded (a :class:`FactorTable` is
+        single-variable by contract); read their cells from
+        :meth:`combined_relativities`.
         """
         from .relativity import FactorTable
 
+        main = set(self.frequency._design_info_["predictors"]) | set(
+            self.severity._design_info_["predictors"]
+        )
         return {
             var: FactorTable(name=var, factors=dict(tab["combined"]), default=1.0)
             for var, tab in self.combined_relativities().items()
+            if var in main
         }
 
     def summary(self) -> pd.DataFrame:

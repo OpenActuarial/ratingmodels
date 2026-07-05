@@ -48,10 +48,32 @@ question: **what rate should we charge, and why did it change?**
 - **Credibility-smoothed relativities** — one-way factors shrunk toward a
   prior by Bühlmann–Straub or limited-fluctuation credibility, plus
   sparse-level collapsing; the actuarial answer to thin cells.
+- **Interactions & intervals** — categorical x categorical and
+  categorical x continuous interaction terms with treatment coding
+  (`fit(..., interactions=[...])`), and delta-method confidence
+  intervals for the fitted mean on any frame (`predict_interval`).
 - **Validation** — leakage-safe `random_split` / `group_split` /
   `temporal_split`, calibration and actual-to-expected tables, ordered-Lorenz
   Gini, lift tables, and a `compare_models` scorecard for honest out-of-sample
   comparison.
+- **Indication assembly** — `ExperienceExhibit` turns per-period premium,
+  losses, and adjustment factors (on-level, trend, development) into the
+  worksheet and the point inputs `RateIndication` consumes, wired so the
+  gross-up identity holds exactly.
+- **Rating plans** — the implemented plan as one object (`RatingPlan`):
+  decomposed per-row build-up, unknown-level policy (`"error"` or table
+  defaults) with a `validate()` audit, off-balance diagnostics, dict
+  round-trip for filing, `from_model(...)` from a fitted GLM or
+  frequency-severity model, and `compare_rating_plans` for the
+  current-vs-proposed exhibit (summary, dislocation, by-group).
+- **On-level factors** — the parallelogram method in closed form
+  (`on_level_factors`): exact piecewise-linear geometry for any policy
+  term, float or datetime rate-change history.
+- **Pooling charges** — `pooling_charge_from_severity` prices the excess
+  layer above a pooling point from any severity object exposing
+  `sf`/`mean_excess` (duck-typed; `lossmodels` distributions and
+  `extremeloss` GPD tails both qualify), producing the `pooling_charge`
+  that `experience_rate` consumes.
 - **Constraints & renewal** — rate caps/floors, banding, rounding, corridors,
   and unit-level re-rating.
 - **Rate dislocation** — band a book by rate change with premium in each band

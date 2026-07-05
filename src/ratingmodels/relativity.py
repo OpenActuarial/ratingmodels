@@ -193,16 +193,30 @@ class GLMRelativities:
             return sm.families.Gamma(log)
         return sm.families.Tweedie(link=log, var_power=p, eql=True)
 
-    def _build_design(self, data, predictors, base_levels=None, continuous=()):
+    def _build_design(
+        self, data, predictors, base_levels=None, continuous=(), interactions=()
+    ):
         """One-hot encode predictors (dropping the base level); add intercept.
 
         The base (reference) level for each predictor is, in order of
         preference: the value supplied in ``base_levels``, otherwise the most
         populous level (the standard choice, giving the most stable intercept).
         ``continuous`` columns enter as numeric covariates unchanged.
+
+        ``interactions`` are ``(a, b)`` pairs. Categorical x categorical adds
+        an indicator per *observed* non-base x non-base level pair (treatment
+        coding: cells containing either base level carry no interaction term,
+        so the main effects keep their interpretation; unobserved pairs are
+        skipped to keep the design full-rank). Categorical x continuous adds
+        one slope-modifier column per non-base level.
+
+        Returns ``(X, chosen_bases, spec)`` where ``spec`` is a structured
+        description of every column -- the single source of truth from which
+        prediction and diagnostics rebuild the design on any frame.
         """
         base_levels = dict(base_levels or {})
         cols = {}
+        spec: list[tuple] = [("intercept",)]
         chosen: dict = {}
         for var in predictors:
             cats = pd.Categorical(data[var])
@@ -222,14 +236,51 @@ class GLMRelativities:
                 if lvl == base:
                     continue
                 cols[f"{var}::{lvl}"] = (cats == lvl).astype(float)
+                spec.append(("level", var, lvl))
         for var in continuous:
             vals = data[var].to_numpy(dtype=float)
             if not np.all(np.isfinite(vals)):
                 raise ValueError(f"continuous covariate {var!r} has non-finite values")
             cols[var] = vals
+            spec.append(("cont", var))
+        for a, b in interactions:
+            a_cat, b_cat = a in chosen, b in chosen
+            if a_cat and (b in continuous):
+                pass  # canonical order: (categorical, continuous)
+            elif b_cat and (a in continuous):
+                a, b = b, a
+                a_cat, b_cat = True, False
+            elif not (a_cat and b_cat):
+                raise ValueError(
+                    f"interaction ({a!r}, {b!r}) must pair two categorical "
+                    "predictors or a categorical predictor with a continuous "
+                    "covariate, each also present as a main effect"
+                )
+            if a_cat and b_cat:
+                ind_a = data[a]
+                ind_b = data[b]
+                for la in pd.Categorical(ind_a).categories:
+                    if la == chosen[a]:
+                        continue
+                    mask_a = (ind_a == la).to_numpy(dtype=float)
+                    for lb in pd.Categorical(ind_b).categories:
+                        if lb == chosen[b]:
+                            continue
+                        col = mask_a * (ind_b == lb).to_numpy(dtype=float)
+                        if not col.any():
+                            continue  # unobserved pair -> would be all-zero
+                        cols[f"{a}::{la}:{b}::{lb}"] = col
+                        spec.append(("ixcc", a, la, b, lb))
+            else:
+                c_vals = data[b].to_numpy(dtype=float)
+                for la in pd.Categorical(data[a]).categories:
+                    if la == chosen[a]:
+                        continue
+                    cols[f"{a}::{la}:{b}"] = (data[a] == la).to_numpy(dtype=float) * c_vals
+                    spec.append(("ixcont", a, la, b))
         X = pd.DataFrame(cols, index=data.index)
         X.insert(0, "Intercept", 1.0)
-        return X, chosen
+        return X, chosen, spec
 
     def fit(
         self,
@@ -241,6 +292,7 @@ class GLMRelativities:
         weights: str | None = None,
         base_levels: Mapping[str, object] | None = None,
         continuous: Sequence[str] = (),
+        interactions: Sequence[tuple] = (),
     ) -> "GLMRelativities":
         r"""Fit relativities for ``predictors`` against ``response``.
 
@@ -263,8 +315,9 @@ class GLMRelativities:
         reference level (relativity 1.0); unspecified predictors use their
         most populous level as the base.
         """
-        X_df, base_levels_used = self._build_design(
-            data, list(predictors), base_levels, continuous=tuple(continuous)
+        X_df, base_levels_used, spec = self._build_design(
+            data, list(predictors), base_levels,
+            continuous=tuple(continuous), interactions=tuple(interactions),
         )
         X = X_df.to_numpy(dtype=float)
         y = data[response].to_numpy(dtype=float)
@@ -345,23 +398,38 @@ class GLMRelativities:
             "predictors": list(predictors),
             "base_levels": dict(base_levels_used),
             "continuous": list(continuous),
+            "interactions": [tuple(ix) for ix in interactions],
             "columns": list(X_df.columns),
+            "spec": list(spec),
             "response": response,
             "exposure": exposure,
             "offset": offset,
             "weights": weights,
         }
 
-        # assemble relativities per variable (base level = 1.0)
+        # assemble relativities per variable (base level = 1.0), spec-driven
+        coefs = self.coefficients_.to_numpy()
         rels: dict[str, pd.Series] = {}
         for var in predictors:
             levels = [base_levels_used[var]]
             vals = [1.0]
-            for name, coef in self.coefficients_.items():
-                if name.startswith(f"{var}::"):
-                    levels.append(name.split("::", 1)[1])
-                    vals.append(float(np.exp(coef)))
+            for j, term in enumerate(spec):
+                if term[0] == "level" and term[1] == var:
+                    levels.append(term[2])
+                    vals.append(float(np.exp(coefs[j])))
             rels[var] = pd.Series(vals, index=levels, name=f"{var}_relativity")
+        # categorical x categorical interactions: a relativity per observed
+        # non-base cell, multiplying on top of both main effects
+        ix_cells: dict[tuple, list] = {}
+        for j, term in enumerate(spec):
+            if term[0] == "ixcc":
+                _, a, la, b, lb = term
+                ix_cells.setdefault((a, b), []).append(((la, lb), float(np.exp(coefs[j]))))
+        for (a, b), cells in ix_cells.items():
+            idx = pd.MultiIndex.from_tuples([c[0] for c in cells], names=[a, b])
+            rels[f"{a}:{b}"] = pd.Series(
+                [c[1] for c in cells], index=idx, name=f"{a}:{b}_relativity"
+            )
         self.relativities_ = rels
         return self
 
@@ -405,17 +473,8 @@ class GLMRelativities:
         """
         if self.coefficients_ is None:
             raise RuntimeError("model is not fit")
-        info = self._design_info_
-        beta = self.coefficients_
-        eta = np.full(len(data), float(beta.iloc[0]), dtype=float)
-        for var in info["predictors"]:
-            vals = data[var]
-            for name, coef in beta.items():
-                if name.startswith(f"{var}::"):
-                    lvl = name.split("::", 1)[1]
-                    eta += float(coef) * (vals == lvl).to_numpy(dtype=float)
-        for var in info["continuous"]:
-            eta += float(beta[var]) * data[var].to_numpy(dtype=float)
+        X = self._design_matrix_from_info(data)
+        eta = X @ self.coefficients_.to_numpy()
         if offset is not None:
             eta += data[offset].to_numpy(dtype=float)
         eta = np.clip(eta, -30, 30)
@@ -423,6 +482,57 @@ class GLMRelativities:
         if exposure is not None:
             mu *= data[exposure].to_numpy(dtype=float)
         return mu
+
+    def predict_interval(
+        self,
+        data: pd.DataFrame,
+        confidence_level: float = 0.95,
+        exposure: str | None = None,
+        offset: str | None = None,
+    ) -> pd.DataFrame:
+        r"""Predicted mean with its confidence interval, per row.
+
+        The interval is for the *fitted mean* (the rate the model assigns to
+        this cell), not for an individual outcome: the delta method on the
+        link scale, :math:`\exp(\hat\eta \pm z\,\sqrt{x^\top \Sigma x})`
+        with :math:`\Sigma` the quasi-likelihood coefficient covariance.
+        Individual outcomes vary far more than the mean; for that question a
+        frequency-severity simulation is the right tool, not a GLM interval.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Index-aligned with ``data``; columns ``predicted``, ``ci_low``,
+            ``ci_high``. With ``exposure``, all three are on the total scale.
+        """
+        if self.coefficients_ is None:
+            raise RuntimeError("model is not fit")
+        if self.cov_params_ is None:
+            raise RuntimeError(
+                "coefficient covariance unavailable (rank-deficient design)"
+            )
+        if not 0 < confidence_level < 1:
+            raise ValueError("confidence_level must be in (0, 1)")
+        z = NormalDist().inv_cdf(0.5 + confidence_level / 2.0)
+        X = self._design_matrix_from_info(data)
+        eta = X @ self.coefficients_.to_numpy()
+        if offset is not None:
+            eta += data[offset].to_numpy(dtype=float)
+        var_eta = np.einsum("ij,jk,ik->i", X, self.cov_params_.to_numpy(), X)
+        se_eta = np.sqrt(np.maximum(var_eta, 0.0))
+        out = pd.DataFrame(
+            {
+                "predicted": np.exp(np.clip(eta, -30, 30)),
+                "ci_low": np.exp(np.clip(eta - z * se_eta, -30, 30)),
+                "ci_high": np.exp(np.clip(eta + z * se_eta, -30, 30)),
+            },
+            index=data.index,
+        )
+        if exposure is not None:
+            expo = data[exposure].to_numpy(dtype=float)
+            for col in out.columns:
+                out[col] = out[col] * expo
+        return out
 
     @property
     def deviance_explained_(self) -> float:
@@ -438,21 +548,38 @@ class GLMRelativities:
     def _design_matrix_from_info(self, data: pd.DataFrame) -> np.ndarray:
         """Rebuild the design matrix for ``data`` in the *fitted* column order.
 
-        Unlike :meth:`_build_design` this never re-derives levels from the
-        data, so it is safe on validation slices whose level sets differ from
-        the training frame; unseen levels get all-zero indicators (the base).
+        Built from the structured column ``spec`` recorded at fit time --
+        never re-deriving levels from the data -- so it is safe on validation
+        slices whose level sets differ from the training frame; unseen levels
+        (and unseen interaction cells) get all-zero indicators, i.e. the base.
+        This is the single design path shared by :meth:`predict`,
+        :meth:`residuals`, and :meth:`predict_interval`.
         """
         info = self._design_info_
         n = len(data)
-        cols = np.empty((n, len(info["columns"])), dtype=float)
-        for j, name in enumerate(info["columns"]):
-            if name == "Intercept":
+        cols = np.empty((n, len(info["spec"])), dtype=float)
+        for j, term in enumerate(info["spec"]):
+            kind = term[0]
+            if kind == "intercept":
                 cols[:, j] = 1.0
-            elif "::" in name:
-                var, lvl = name.split("::", 1)
+            elif kind == "level":
+                _, var, lvl = term
                 cols[:, j] = (data[var] == lvl).to_numpy(dtype=float)
-            else:  # continuous covariate
-                cols[:, j] = data[name].to_numpy(dtype=float)
+            elif kind == "cont":
+                cols[:, j] = data[term[1]].to_numpy(dtype=float)
+            elif kind == "ixcc":
+                _, a, la, b, lb = term
+                cols[:, j] = (
+                    (data[a] == la).to_numpy(dtype=float)
+                    * (data[b] == lb).to_numpy(dtype=float)
+                )
+            elif kind == "ixcont":
+                _, a, la, c = term
+                cols[:, j] = (data[a] == la).to_numpy(dtype=float) * data[c].to_numpy(
+                    dtype=float
+                )
+            else:  # pragma: no cover - spec is produced in-package
+                raise ValueError(f"unknown design term {term!r}")
         return cols
 
     def residuals(
@@ -559,31 +686,42 @@ class GLMRelativities:
             raise ValueError("confidence_level must be in (0, 1)")
         z = NormalDist().inv_cdf(0.5 + confidence_level / 2.0)
         info = self._design_info_
-        rows = []
-        for var in info["predictors"]:
-            base = info["base_levels"][var]
-            rows.append((var, base, 0.0, np.nan, 1.0, np.nan, np.nan, True))
-            for name, coef in self.coefficients_.items():
-                if name.startswith(f"{var}::"):
-                    lvl = name.split("::", 1)[1]
-                    se = float(self.se_[name]) if self.se_ is not None else np.nan
-                    lo, hi = (
-                        (np.exp(coef - z * se), np.exp(coef + z * se))
-                        if np.isfinite(se)
-                        else (np.nan, np.nan)
-                    )
-                    rows.append(
-                        (var, lvl, float(coef), se, float(np.exp(coef)), lo, hi, False)
-                    )
-        for var in info["continuous"]:
-            coef = float(self.coefficients_[var])
-            se = float(self.se_[var]) if self.se_ is not None else np.nan
+        coefs = self.coefficients_.to_numpy()
+        ses = (
+            self.se_.to_numpy()
+            if self.se_ is not None
+            else np.full(len(coefs), np.nan)
+        )
+
+        def _row(variable, level, j, is_base=False):
+            if is_base:
+                return (variable, level, 0.0, np.nan, 1.0, np.nan, np.nan, True)
+            coef, se = float(coefs[j]), float(ses[j])
             lo, hi = (
                 (np.exp(coef - z * se), np.exp(coef + z * se))
                 if np.isfinite(se)
                 else (np.nan, np.nan)
             )
-            rows.append((var, "(per +1)", coef, se, float(np.exp(coef)), lo, hi, False))
+            return (variable, level, coef, se, float(np.exp(coef)), lo, hi, False)
+
+        spec = info["spec"]
+        rows = []
+        for var in info["predictors"]:
+            rows.append(_row(var, info["base_levels"][var], None, is_base=True))
+            for j, term in enumerate(spec):
+                if term[0] == "level" and term[1] == var:
+                    rows.append(_row(var, term[2], j))
+        for var in info["continuous"]:
+            for j, term in enumerate(spec):
+                if term[0] == "cont" and term[1] == var:
+                    rows.append(_row(var, "(per +1)", j))
+        for j, term in enumerate(spec):
+            if term[0] == "ixcc":
+                _, a, la, b, lb = term
+                rows.append(_row(f"{a}:{b}", f"{la} | {lb}", j))
+            elif term[0] == "ixcont":
+                _, a, la, c = term
+                rows.append(_row(f"{a}:{c}", f"{la} (per +1)", j))
         out = pd.DataFrame(
             rows,
             columns=[
@@ -600,8 +738,10 @@ class GLMRelativities:
         becomes a named lookup that plugs directly into the build-up and
         renewal machinery, with ``default=1.0`` for unknown levels --
         matching how :meth:`predict` treats levels unseen at fit time.
-        Continuous covariates have no level->factor form and are not
-        included; read their per-unit effect from :meth:`relativity_table`.
+        Continuous covariates and interaction terms have no single-variable
+        level->factor form and are not included; read their effects from
+        :meth:`relativity_table` (and cat x cat cells from
+        ``relativities_["a:b"]``).
 
         Returns
         -------
@@ -610,9 +750,11 @@ class GLMRelativities:
         """
         if self.coefficients_ is None:
             raise RuntimeError("model is not fit")
+        main = set(self._design_info_["predictors"])
         return {
             var: FactorTable(name=var, factors=dict(rels), default=1.0)
             for var, rels in self.relativities_.items()
+            if var in main
         }
 
     def summary(self) -> pd.DataFrame:

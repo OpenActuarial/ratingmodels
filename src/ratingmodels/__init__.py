@@ -64,7 +64,7 @@ from .experience_rate import (
     expected_excess_charge,
     pool_claims,
 )
-from .indication import RateIndication
+from .indication import ExperienceExhibit, RateIndication
 from .loading import (
     RetentionLoad,
     gross_rate,
@@ -84,6 +84,9 @@ from .evaluation import (
     lift_table,
 )
 from .freqsev import FrequencySeverityModel
+from .onlevel import on_level_factors
+from .plan import PlanComparison, RatingPlan, compare_rating_plans
+from .pooling import pooling_charge_from_severity
 from .relativity import (
     FactorTable,
     GLMRelativities,
@@ -193,6 +196,12 @@ __all__ = [
     "corridor",
     "rate_dislocation",
     "constraint_impact",
+    "RatingPlan",
+    "PlanComparison",
+    "compare_rating_plans",
+    "ExperienceExhibit",
+    "on_level_factors",
+    "pooling_charge_from_severity",
     "renew",
     "RenewalAction",
     "unit_level_renewal",

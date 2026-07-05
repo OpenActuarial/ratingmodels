@@ -162,3 +162,42 @@ def test_pearson_residuals_match_statsmodels():
         model.residuals(df, kind="deviance"), res.resid_deviance,
         rtol=1e-4, atol=1e-8,
     )
+
+
+def test_interaction_design_matches_statsmodels():
+    rng = np.random.default_rng(31)
+    n = 2500
+    df = pd.DataFrame(
+        {
+            "a": rng.choice(["p", "q"], n),
+            "b": rng.choice(["u", "v", "w"], n),
+            "exposure": rng.uniform(10.0, 50.0, n),
+        }
+    )
+    df["claims"] = rng.poisson(0.2 * df["exposure"])
+    model = rm.GLMRelativities(family="poisson").fit(
+        df, response="claims", predictors=["a", "b"], exposure="exposure",
+        interactions=[("a", "b")],
+    )
+    res = sm.GLM(
+        df["claims"], _sm_design(model, df),
+        family=sm.families.Poisson(sm.families.links.Log()),
+        offset=np.log(df["exposure"].to_numpy()),
+    ).fit(scale="X2")
+    _assert_matches(model, res)
+
+
+def test_predict_interval_matches_statsmodels():
+    df = sample_rating_data(n=1500, seed=33)
+    model = rm.GLMRelativities(family="poisson").fit(
+        df, response="claims", predictors=["area", "tier"], exposure="exposure"
+    )
+    head = df.head(40)
+    ours = model.predict_interval(head, confidence_level=0.95, exposure="exposure")
+    pred = model.results_.get_prediction(
+        exog=model._design_matrix_from_info(head),
+        offset=np.log(head["exposure"].to_numpy()),
+    ).summary_frame(alpha=0.05)
+    np.testing.assert_allclose(ours["predicted"], pred["mean"], rtol=1e-8)
+    np.testing.assert_allclose(ours["ci_low"], pred["mean_ci_lower"], rtol=1e-6)
+    np.testing.assert_allclose(ours["ci_high"], pred["mean_ci_upper"], rtol=1e-6)

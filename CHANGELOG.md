@@ -2,13 +2,77 @@
 
 ## 0.6.0 - 2026-07-04
 
-Validation release: a fitted model is now inspectable and testable, not just
-usable. GLM estimation is delegated to statsmodels while ratingmodels keeps
-the actuarial layer; the model exposes residuals and relativity intervals,
-out-of-sample evaluation has first-class tables and leakage-safe splits, and
-pure-premium modeling, credibility smoothing, and dislocation reporting round
-out the workflow from fit to filed change. Everything is domain-agnostic and
-follows the columns-in, columns-out contract.
+Validation and implementation release: a fitted model is now inspectable,
+testable, and *deployable*. GLM estimation is delegated to statsmodels while
+ratingmodels keeps the actuarial layer; the model exposes residuals,
+relativity intervals, and prediction intervals; interactions join the design
+vocabulary; out-of-sample evaluation has first-class tables and leakage-safe
+splits; and the path from fit to filed change is now complete objects rather
+than conventions -- `RatingPlan` for the implemented plan, plan comparison
+and dislocation for the change, on-level factors for restating history, and
+pooling charges from any fitted severity tail. Everything is domain-agnostic
+and follows the columns-in, columns-out contract.
+
+### Added (implementation layer)
+- **Interaction terms.** `fit(..., interactions=[("area", "industry")])`
+  supports categorical x categorical and categorical x continuous pairs
+  (order-agnostic; each member must also enter as a main effect).
+  Cat x cat uses treatment coding -- an indicator per *observed* non-base x
+  non-base level pair, so main effects keep their interpretation and
+  unobserved cells cannot silently alias the design -- and surfaces as a
+  MultiIndex relativity table in `relativities_["a:b"]` plus
+  `"la | lb"` rows in `relativity_table()`. Cat x continuous fits one
+  slope modifier per non-base level (`"la (per +1)"` rows).
+  `to_factor_tables()` deliberately excludes interactions (a `FactorTable`
+  is single-variable by contract).
+- **Structured design spec.** The fitted design is now recorded as a
+  structured column spec rather than parseable coefficient names, and
+  `predict` is unified through the same design-matrix path as `residuals`
+  and the statsmodels cross-checks -- one code path from fit to score.
+  (Internal, but it is why interaction names like `area::B:industry::tech`
+  cannot be misread as levels of `area`.)
+- **`predict_interval`.** Delta-method confidence intervals for the fitted
+  mean on any frame, from the quasi-likelihood coefficient covariance;
+  matches `statsmodels` `get_prediction` to numerical precision. The
+  docstring is explicit that this is an interval for the *rate*, not for
+  individual outcomes.
+- **`RatingPlan`.** The implemented plan as one object: base rate plus a
+  `FactorTable` per variable. `rate(census)` returns the full decomposed
+  build-up per row; `validate(census)` lists every level the plan has no
+  factor for; `unknown="error"` makes unmapped levels a hard stop instead
+  of a silent 1.0; `average_relativity` is the off-balance diagnostic;
+  `to_dict`/`from_dict` round-trip (schema-versioned) for filing and
+  version control; `RatingPlan.from_model(...)` builds a plan straight
+  from a fitted `GLMRelativities` or `FrequencySeverityModel`, and
+  `plan.rate(...)["premium"]` reproduces `model.predict(...)` exactly.
+- **`compare_rating_plans`.** Rates one census under two plans and returns
+  a `PlanComparison`: `summary()` (premium totals, average change,
+  exposure shares moving up/down), `dislocation()` (the banded exhibit via
+  `rate_dislocation`), and `by(labels)` (who absorbs the move).
+- **`on_level_factors`.** The parallelogram method made exact: the earned
+  rate index is integrated in closed form (piecewise-linear geometry, no
+  discretization), with `policy_term` controlling the parallelogram
+  (`0` = instant earning, `1.0` = the classic annual case -- the textbook
+  +10%-mid-year example reproduces 1.1/1.0125 to machine precision).
+  Accepts float or datetime inputs.
+- **`ExperienceExhibit`.** `RateIndication` consumes point inputs -- a
+  trended, developed loss cost and an on-level premium; this is the object
+  that assembles them from per-period columns, every adjustment a visible
+  worksheet column (premium x on-level factor, losses x development x
+  trend, per-period and weighted loss ratios). `to_indication(...)` wires
+  the totals straight into `RateIndication`, and the identity is exact by
+  construction: the indication's own `experience_loss_ratio()` reproduces
+  the exhibit's aggregate ratio, and at full credibility the indicated
+  rate *is* `retention.gross_rate(...)` of the assembled loss cost --
+  one expense algebra, no parallel implementation. Natural factor
+  producers: `on_level_factors` and `actuarialpy.reserving.ChainLadder`.
+- **`pooling_charge_from_severity`.** Where `experience_rate`'s
+  `pooling_charge` input comes from: expected excess cost above a pooling
+  point from any severity object exposing `sf(x)` and `mean_excess(d)`,
+  returned as an auditable build-up (exceedance probability, mean excess,
+  pure cost, loaded charge). The protocol is duck-typed: `lossmodels`
+  distributions and `extremeloss` GPD tail fits both qualify, with no
+  cross-package dependency.
 
 ### Changed
 - **GLM estimation now delegates to `statsmodels.GLM`** (new runtime

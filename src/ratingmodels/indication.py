@@ -20,7 +20,11 @@ indication against a trend-only ("no experience") indication:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Sequence
+
+import numpy as np
+import pandas as pd
 
 from ._utils import (
     Numeric,
@@ -171,3 +175,161 @@ class RateIndication:
         }
         total = self.indicated_rate() / self.current_rate
         return decompose_rate_change(drivers, total_factor=total)
+
+
+def _as_period_array(value, n: int, name: str) -> np.ndarray:
+    arr = np.asarray(value, dtype=float)
+    if arr.ndim == 0:
+        arr = np.full(n, float(arr))
+    if arr.shape != (n,):
+        raise ValueError(
+            f"{name} must be a scalar or a length-{n} sequence; got shape {arr.shape}"
+        )
+    if not np.all(np.isfinite(arr)):
+        raise ValueError(f"{name} has non-finite values")
+    return arr
+
+
+@dataclass
+class ExperienceExhibit:
+    r"""Assemble experience periods into the inputs a rate indication takes.
+
+    :class:`RateIndication` consumes *point* inputs -- a trended, developed
+    experience loss cost and an on-level premium. This is the object that
+    produces them from per-period columns, with every adjustment a visible
+    column of the worksheet: premium times its on-level factor, losses
+    times development and trend, a loss ratio per period, and the weighted
+    total. The natural factor producers are
+    :func:`~ratingmodels.on_level_factors` (the ``on_level_factor``
+    column) and ``actuarialpy.reserving.ChainLadder`` (per-origin
+    development factors), but any source works -- this object composes, it
+    does not re-derive.
+
+    Parameters
+    ----------
+    earned_premium : array-like
+        Earned premium per experience period, at historical rate level.
+    losses : array-like
+        Incurred losses per period (at whatever development and trend
+        level the factor arguments then adjust for).
+    on_level_factors, trend_factors, development_factors : scalar or array
+        Per-period multiplicative adjustments. Default 1.0.
+    weights : array-like, optional
+        Weights for the *diagnostic* weighted loss ratio. Default: on-level
+        premium, making the weighted ratio identical to the aggregate
+        ratio -- which is also the convention :meth:`to_indication` uses,
+        since the indication is built from period totals.
+    period_labels : sequence, optional
+        Exhibit index; defaults to ``0..n-1``.
+    """
+
+    earned_premium: object
+    losses: object
+    on_level_factors: object = 1.0
+    trend_factors: object = 1.0
+    development_factors: object = 1.0
+    weights: object | None = None
+    period_labels: Sequence | None = None
+    _n: int = field(init=False, repr=False)
+
+    def __post_init__(self):
+        premium = np.asarray(self.earned_premium, dtype=float)
+        if premium.ndim == 0:
+            premium = premium.reshape(1)
+        self._n = n = premium.shape[0]
+        if np.any(premium <= 0) or not np.all(np.isfinite(premium)):
+            raise ValueError("earned_premium must be positive and finite")
+        self.earned_premium = premium
+        self.losses = _as_period_array(self.losses, n, "losses")
+        if np.any(self.losses < 0):
+            raise ValueError("losses must be nonnegative")
+        for name in ("on_level_factors", "trend_factors", "development_factors"):
+            arr = _as_period_array(getattr(self, name), n, name)
+            if np.any(arr <= 0):
+                raise ValueError(f"{name} must be positive")
+            setattr(self, name, arr)
+        if self.weights is not None:
+            self.weights = _as_period_array(self.weights, n, "weights")
+            if np.any(self.weights < 0) or self.weights.sum() <= 0:
+                raise ValueError("weights must be nonnegative with positive sum")
+        if self.period_labels is not None and len(self.period_labels) != n:
+            raise ValueError("period_labels must match the number of periods")
+
+    # ------------------------------------------------------------------ #
+    def exhibit(self) -> pd.DataFrame:
+        """The worksheet: one row per period, every adjustment a column."""
+        olp = self.earned_premium * self.on_level_factors
+        adj = self.losses * self.development_factors * self.trend_factors
+        w = self.weights if self.weights is not None else olp
+        idx = pd.Index(
+            self.period_labels if self.period_labels is not None else range(self._n),
+            name="period",
+        )
+        return pd.DataFrame(
+            {
+                "earned_premium": self.earned_premium,
+                "on_level_factor": self.on_level_factors,
+                "on_level_premium": olp,
+                "losses": self.losses,
+                "development_factor": self.development_factors,
+                "trend_factor": self.trend_factors,
+                "adjusted_losses": adj,
+                "loss_ratio": adj / olp,
+                "weight": w,
+            },
+            index=idx,
+        )
+
+    @property
+    def on_level_premium(self) -> float:
+        """Total on-level earned premium across the periods."""
+        return float((self.earned_premium * self.on_level_factors).sum())
+
+    @property
+    def adjusted_losses(self) -> float:
+        """Total developed, trended losses across the periods."""
+        return float(
+            (self.losses * self.development_factors * self.trend_factors).sum()
+        )
+
+    @property
+    def experience_loss_ratio(self) -> float:
+        """Weighted per-period loss ratio (aggregate ratio by default)."""
+        ex = self.exhibit()
+        return float(np.average(ex["loss_ratio"], weights=ex["weight"]))
+
+    # ------------------------------------------------------------------ #
+    def to_indication(
+        self,
+        manual_loss_cost: float,
+        credibility: float,
+        current_rate: float,
+        exposure: float,
+        retention: RetentionLoad | None = None,
+        target_loss_ratio: float = 0.85,
+        **kwargs,
+    ) -> RateIndication:
+        """Wire the assembled totals into a :class:`RateIndication`.
+
+        ``experience_loss_cost`` becomes ``adjusted_losses / exposure`` and
+        ``current_premium`` becomes :attr:`on_level_premium`, so the
+        indication's own ``experience_loss_ratio()`` reproduces this
+        exhibit's aggregate ratio exactly. ``exposure`` is the total over
+        the experience period, in the same units as ``manual_loss_cost``
+        and ``current_rate``. Remaining keyword arguments
+        (``trend_total_factor``, ``benefit_factor``, ...) pass through.
+        """
+        exposure = float(exposure)
+        if exposure <= 0:
+            raise ValueError("exposure must be positive")
+        return RateIndication(
+            experience_loss_cost=self.adjusted_losses / exposure,
+            manual_loss_cost=manual_loss_cost,
+            credibility=credibility,
+            current_rate=current_rate,
+            current_premium=self.on_level_premium,
+            exposure=exposure,
+            retention=retention,
+            target_loss_ratio=target_loss_ratio,
+            **kwargs,
+        )
