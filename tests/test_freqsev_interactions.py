@@ -80,3 +80,35 @@ def test_to_factor_tables_excludes_interactions_and_plan_warns(fitted):
     assert set(model.to_factor_tables()) == {"area", "ind"}
     with pytest.warns(UserWarning, match="interaction terms"):
         rm.RatingPlan.from_model(model)
+
+
+def test_predict_interval_identities(fitted):
+    df, model = fitted
+    head = df.head(40)
+    pi = model.predict_interval(head, exposure="exposure")
+    np.testing.assert_allclose(
+        pi["predicted"],
+        model.pure_premium_prediction(head, exposure="exposure"),
+        rtol=1e-12,
+    )
+    assert (pi["ci_low"] < pi["predicted"]).all()
+    assert (pi["predicted"] < pi["ci_high"]).all()
+    # log-scale variance is exactly the sum of the component variances:
+    # reconstruct from the two submodel intervals
+    z = 1.959963984540054
+    hf = np.log(model.frequency.predict_interval(head)["ci_high"]
+                / model.frequency.predict_interval(head)["predicted"]) / z
+    hs = np.log(model.severity.predict_interval(head)["ci_high"]
+                / model.severity.predict_interval(head)["predicted"]) / z
+    combined = np.log(pi["ci_high"] / pi["predicted"]) / z
+    np.testing.assert_allclose(combined, np.sqrt(hf**2 + hs**2), rtol=1e-10)
+    # exposure scales all three columns linearly
+    per_unit = model.predict_interval(head)
+    np.testing.assert_allclose(
+        pi["ci_low"], per_unit["ci_low"] * head["exposure"], rtol=1e-12)
+
+
+def test_predict_interval_guards(fitted):
+    df, model = fitted
+    with pytest.raises(ValueError, match="confidence_level"):
+        model.predict_interval(df.head(), confidence_level=1.5)

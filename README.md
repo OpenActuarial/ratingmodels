@@ -1,5 +1,7 @@
 # ratingmodels
 
+[![CI](https://github.com/OpenActuarial/ratingmodels/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenActuarial/ratingmodels/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/ratingmodels)](https://pypi.org/project/ratingmodels/)
+
 **Actuarial pricing and rate-indication tools for experience-rated insurance portfolios.**
 
 `ratingmodels` covers the group rating workflow — the step that turns experience

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.0 - 2026-07-05
+
+Frequency-severity parity with the GLM layer's uncertainty surface.
+
+### Added
+- **Frequency-severity prediction intervals.**
+  `FrequencySeverityModel.predict_interval` -- the same delta-method
+  interval `GLMRelativities` has, for the composite: log-scale variances
+  of the two component linear predictors add, under the stated (and it
+  is an assumption, stated as such) independence of the frequency and
+  severity coefficient estimates. `predicted` equals
+  `pure_premium_prediction` exactly; switching from a GLM to a
+  frequency-severity model no longer silently loses uncertainty.
+## 0.6.1 - 2026-07-04
+
+### Added
+- **Frequency-severity interactions.** `FrequencySeverityModel.fit`
+  gains `frequency_interactions` / `severity_interactions` (severity
+  defaults to the frequency list, mirroring the predictor convention),
+  threading straight through to the component GLMs. Categorical x
+  categorical cells surface in `combined_relativities()` under an
+  `"a:b"` key with a MultiIndex of level pairs (`combined` = frequency x
+  severity per cell; a component without the interaction contributes
+  1.0); `to_factor_tables()` excludes interactions like the GLM does, and
+  `RatingPlan.from_model` warns accordingly.
 ## 0.6.0 - 2026-07-04
 
 Validation and implementation release: a fitted model is now inspectable,

@@ -199,6 +199,65 @@ class FrequencySeverityModel:
         """
         return self.frequency_prediction(data, exposure=exposure) * self.severity_prediction(data)
 
+    def predict_interval(
+        self,
+        data: pd.DataFrame,
+        confidence_level: float = 0.95,
+        exposure: str | None = None,
+    ) -> pd.DataFrame:
+        r"""Predicted pure premium with its confidence interval, per row.
+
+        The pure premium is :math:`\exp(\eta_f + \eta_s)`; on the log
+        scale the variances of the two component linear predictors add,
+        *assuming the frequency and severity coefficient estimates are
+        independent* -- the standard frequency-severity assumption (the
+        two GLMs are fit to different responses), stated here because it
+        is an assumption, not a theorem. The interval is for the *mean*
+        pure premium of a cell, not for an individual outcome; individual
+        losses vary enormously more than their expectation.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Index-aligned with ``data``; columns ``predicted``, ``ci_low``,
+            ``ci_high``. With ``exposure``, all three are on the total
+            scale. ``predicted`` equals :meth:`pure_premium_prediction`
+            exactly.
+        """
+        self._check_fit()
+        from statistics import NormalDist
+
+        for name, model in (("frequency", self.frequency),
+                            ("severity", self.severity)):
+            if model.cov_params_ is None:
+                raise RuntimeError(
+                    f"{name} model has no coefficient covariance "
+                    "(rank-deficient design); no interval is available"
+                )
+        if not 0 < confidence_level < 1:
+            raise ValueError("confidence_level must be in (0, 1)")
+        z = NormalDist().inv_cdf(0.5 + confidence_level / 2.0)
+        eta = np.zeros(len(data))
+        var = np.zeros(len(data))
+        for model in (self.frequency, self.severity):
+            x = model._design_matrix_from_info(data)
+            eta += x @ model.coefficients_.to_numpy()
+            var += np.einsum("ij,jk,ik->i", x, model.cov_params_.to_numpy(), x)
+        se = np.sqrt(np.maximum(var, 0.0))
+        out = pd.DataFrame(
+            {
+                "predicted": np.exp(np.clip(eta, -30, 30)),
+                "ci_low": np.exp(np.clip(eta - z * se, -30, 30)),
+                "ci_high": np.exp(np.clip(eta + z * se, -30, 30)),
+            },
+            index=data.index,
+        )
+        if exposure is not None:
+            expo = data[exposure].to_numpy(dtype=float)
+            for col in out.columns:
+                out[col] = out[col] * expo
+        return out
+
     # ----- combined structure ----- #
     @property
     def base_value_(self) -> float:
