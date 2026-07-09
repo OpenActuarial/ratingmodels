@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.1 - 2026-07-09
+
+Compatibility release for actuarialpy 0.44 — no functional changes.
+
+### Changed
+- **actuarialpy pin raised to `~=0.44.0`** (was `~=0.40.0`). actuarialpy
+  0.42–0.44 moved the experience-study layer (`Experience`, the summaries,
+  `UnderwritingSummary`, `to_excel_report`) into the new `experiencestudies`
+  package; nothing `ratingmodels` delegates to (credibility, trend,
+  time-value math) changed. The full test suite passes against 0.44.
+- The worked-example regression test now imports `Experience` from
+  `experiencestudies` (added to the `dev` extra); the pinned page numbers
+  are unchanged.
+
 ## 0.7.0 - 2026-07-05
 
 Frequency-severity parity with the GLM layer's uncertainty surface.

@@ -5,6 +5,7 @@ import pytest
 
 import actuarialpy as ap
 import ratingmodels as rm
+from experiencestudies import Experience
 
 
 def _panel():
@@ -29,8 +30,8 @@ def _panel():
 
 def test_experience_renewal_page_numbers():
     df = _panel()
-    exp = ap.Experience(df, expense="allowed", revenue="premium",
-                        exposure="member_months", date="month", count="claim_count")
+    exp = Experience(df, expense="allowed", revenue="premium",
+                     exposure="member_months", date="month", count="claim_count")
 
     d = exp.decompose_trend(period_col="year", prior_period=2024,
                             current_period=2025, mix_by="segment").iloc[0]
