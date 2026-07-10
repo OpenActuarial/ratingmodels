@@ -12,8 +12,8 @@ def _panel():
     rng = np.random.default_rng(42)
     months = pd.date_range("2023-01-01", "2025-12-01", freq="MS")
     rows = []
-    for seg, mm0, growth, f0, s0 in [("ppo", 5200, -0.010, 0.30, 950.0),
-                                     ("hmo", 3100, +0.055, 0.34, 880.0)]:
+    for seg, mm0, growth, f0, s0 in [("north", 5200, -0.010, 0.30, 950.0),
+                                     ("south", 3100, +0.055, 0.34, 880.0)]:
         for i, m in enumerate(months):
             yrs = i / 12.0
             mm = mm0 * (1 + growth) ** yrs
@@ -23,14 +23,14 @@ def _panel():
             cc = freq * mm
             rows.append((m, seg, mm, cc, cc * sev, 393.0 * mm))
     df = pd.DataFrame(rows, columns=["month", "segment", "member_months",
-                                     "claim_count", "allowed", "premium"])
+                                     "claim_count", "incurred", "premium"])
     df["year"] = df["month"].dt.year
     return df
 
 
 def test_experience_renewal_page_numbers():
     df = _panel()
-    exp = Experience(df, expense="allowed", revenue="premium",
+    exp = Experience(df, expense="incurred", revenue="premium",
                      exposure="member_months", date="month", count="claim_count")
 
     d = exp.decompose_trend(period_col="year", prior_period=2024,
@@ -42,12 +42,12 @@ def test_experience_renewal_page_numbers():
     assert d["frequency_trend"] * d["severity_trend"] * d["mix_trend"] == pytest.approx(
         d["loss_per_exposure_trend"], rel=1e-12)
 
-    dm = df.groupby("month", as_index=False)[["allowed", "member_months"]].sum()
-    factors = ap.seasonality_factors(dm, date_col="month", value_col="allowed",
+    dm = df.groupby("month", as_index=False)[["incurred", "member_months"]].sum()
+    factors = ap.seasonality_factors(dm, date_col="month", value_col="incurred",
                                      exposure_col="member_months")
     assert round(factors[1], 3) == 1.049 and round(factors[7], 3) == 0.940
-    dm2 = ap.deseasonalize(dm, factors, date_col="month", value_col="allowed")
-    fit = ap.fit_trend(dm2, value_col="allowed_deseasonalized",
+    dm2 = ap.deseasonalize(dm, factors, date_col="month", value_col="incurred")
+    fit = ap.fit_trend(dm2, value_col="incurred_deseasonalized",
                        date_col="month", exposure_col="member_months")
     assert round(fit.annual_trend, 4) == 0.0666
     assert fit.r_squared > 0.95
