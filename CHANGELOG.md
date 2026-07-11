@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.3 - 2026-07-11
+
+### Added
+- **Contract-pinned loss ratios as named constructors.** Some experience-rated
+  contracts fix a loss ratio and solve premium from it; both standard pins were
+  already reachable through field arithmetic on `RetentionLoad`, and are now
+  first-class vocabulary:
+  - `RetentionLoad.from_gross_loss_ratio(lr, variable_items=None)` — the
+    contract fixes claims/premium, so `P = C/LR*`. Optional itemization splits
+    the pinned retention with the remainder landing in `profit_margin`; items
+    exceeding `1 - LR*` raise.
+  - `RetentionLoad.from_net_loss_ratio(lr, fixed_expense=0, variable_items=None)`
+    — the contract fixes claims/(premium − expenses), so
+    `P = (C/LR* + F)/(1 − V)`. The `1/LR*` gross-up is carried through the
+    percent-of-claims (`lae_ratio`) slot; the docstring states the mapping.
+- `RetentionLoad.implied_net_loss_ratio(loss_cost)` — claims over premium net
+  of fixed and variable expenses (profit stays in the denominator). Returns the
+  contractual ratio identically for `from_net_loss_ratio` instances, making the
+  contract check a one-liner.
+- Example `examples/contract_loss_ratios.py` covering both pins and a book of
+  pinned-ratio groups in columns.
+- Regression test pinning the ratingmodels segment of docs Example 10
+  (`worked-example-contract.md`): the contract-pinned charged rates and
+  renewal actions, the gross-pin action ≡ claims-trend identity, and the
+  net-pin closed form.
+
 ## 0.7.2 - 2026-07-10
 
 ### Changed
