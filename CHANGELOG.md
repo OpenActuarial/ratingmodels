@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.2 - 2026-07-10
+
+### Changed
+- The `actuarialpy` dependency is now an open floor (`>=0.44`) instead of the
+  compatible-release pin (`~=0.44.0`), which made `ratingmodels`
+  co-uninstallable with every future `actuarialpy` minor release. Open
+  floors are now the ecosystem policy; runtime drift is caught by the
+  nightly ecosystem smoke workflow.
+
 ## 0.7.1 - 2026-07-09
 
 Compatibility release for actuarialpy 0.44 — no functional changes.
