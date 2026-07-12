@@ -20,6 +20,11 @@ indication against a trend-only ("no experience") indication:
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from actuarialpy import Experience
+
 from dataclasses import dataclass, field
 from typing import Sequence
 
@@ -256,6 +261,51 @@ class ExperienceExhibit:
             raise ValueError("period_labels must match the number of periods")
 
     # ------------------------------------------------------------------ #
+    @classmethod
+    def from_experience(
+        cls,
+        exp: "Experience",
+        *,
+        freq: str = "YE",
+        on_level_factors: object = 1.0,
+        trend_factors: object = 1.0,
+        development_factors: object = 1.0,
+        weights: object | None = None,
+    ) -> "ExperienceExhibit":
+        """Build the worksheet from the canonical Experience.
+
+        Premium comes from the bound ``revenue`` role and losses from the
+        bound ``expense`` role, summed per ``freq`` period of the bound
+        ``date`` role (annual by default). The factor arguments stay explicit
+        -- on-leveling, development, and trend are judgment this object
+        composes, not derives.
+        """
+        from actuarialpy import resolve_date, single_role
+
+        revenue = single_role(exp.revenue, "revenue")
+        expense = single_role(exp.expense, "expense")
+        date_col = resolve_date(exp)
+        dated = exp.data.assign(**{date_col: pd.to_datetime(exp.data[date_col])})
+        per = (
+            dated.set_index(date_col)[[revenue, expense]]
+            .resample(freq)
+            .sum()
+        )
+        labels = (
+            list(per.index.year)
+            if freq.upper().startswith(("Y", "A"))
+            else list(per.index.astype(str))
+        )
+        return cls(
+            earned_premium=per[revenue].to_numpy(),
+            losses=per[expense].to_numpy(),
+            on_level_factors=on_level_factors,
+            trend_factors=trend_factors,
+            development_factors=development_factors,
+            weights=weights,
+            period_labels=labels,
+        )
+
     def exhibit(self) -> pd.DataFrame:
         """The worksheet: one row per period, every adjustment a column."""
         olp = self.earned_premium * self.on_level_factors

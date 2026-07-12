@@ -18,6 +18,12 @@ The experience rate develops a group's own claims into a charged rate:
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from actuarialpy import Experience
+
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -163,3 +169,99 @@ class ExperienceRate:
         if self.retention is not None:
             return self.retention.gross_rate(self.loss_cost())
         return maybe_float(self.loss_cost() / self.target_loss_ratio)
+
+    @classmethod
+    def from_experience(
+        cls,
+        exp: "Experience",
+        *,
+        expense: "str | Sequence[str] | None" = None,
+        pooling_point: float | None = None,
+        claimant_col: str | None = None,
+        trend_annual: Numeric = 0.0,
+        trend_years: Numeric = 1.0,
+        pooling_charge: Numeric = 0.0,
+        benefit_factor: Numeric = 1.0,
+        demographic_factor: Numeric = 1.0,
+        target_loss_ratio: Numeric = 0.85,
+        retention: "RetentionLoad | None" = None,
+    ) -> "ExperienceRate":
+        """Build the worksheet row from the canonical Experience.
+
+        ``incurred_claims`` and ``exposure`` are the sums of the bound expense
+        and exposure roles. With ``pooling_point`` (and ``claimant_col`` naming
+        the claimant identifier), each claimant's total is capped at the
+        pooling point and the excess feeds ``pooled_excess`` -- the same split
+        :func:`pool_claims` makes from a list of large claims. Everything else
+        (trend, pooling charge, factors, retention) is judgment supplied by
+        the caller, exactly as in the scalar constructor.
+        """
+        from actuarialpy import single_role
+
+        if expense is None:
+            expense_cols = [single_role(exp.expense, "expense")]
+        else:
+            expense_cols = [expense] if isinstance(expense, str) else list(expense)
+            unknown = [c for c in expense_cols if c not in exp.expense]
+            if unknown:
+                raise ValueError(
+                    f"expense selection {unknown} is not among the bound expense "
+                    f"roles {list(exp.expense)}"
+                )
+        exposure_col = single_role(exp.exposure, "exposure")
+        incurred = float(exp.data[expense_cols].to_numpy().sum())
+        pooled_excess = 0.0
+        if pooling_point is not None:
+            if claimant_col is None:
+                raise ValueError(
+                    "pooling_point requires claimant_col naming the claimant identifier"
+                )
+            totals = exp.data.groupby(claimant_col)[expense_cols].sum().sum(axis=1)
+            pooled_excess = float((totals - totals.clip(upper=pooling_point)).sum())
+        return cls(
+            incurred_claims=incurred,
+            exposure=float(exp.data[exposure_col].sum()),
+            trend_annual=trend_annual,
+            trend_years=trend_years,
+            pooled_excess=pooled_excess,
+            pooling_charge=pooling_charge,
+            benefit_factor=benefit_factor,
+            demographic_factor=demographic_factor,
+            target_loss_ratio=target_loss_ratio,
+            retention=retention,
+        )
+
+
+def experience_rate(
+    exp: "Experience",
+    *,
+    by: str | list[str] | None = None,
+    **kwargs,
+) -> "ExperienceRate | pd.DataFrame":
+    """Experience rates from the canonical Experience.
+
+    Without ``by``, returns the single :class:`ExperienceRate` (the primitive:
+    one experience-rated group, one worksheet row). With ``by``, builds one
+    worksheet row per segment of the bound frame and returns a tidy DataFrame
+    of the rate components -- book-level sugar over the classmethod.
+    """
+    if by is None:
+        return ExperienceRate.from_experience(exp, **kwargs)
+    by_cols = [by] if isinstance(by, str) else list(by)
+    rows = []
+    for key, index in exp.data.groupby(by_cols).groups.items():
+        key_tuple = key if isinstance(key, tuple) else (key,)
+        segment = exp.filter(mask=exp.data.index.isin(index))
+        rate = ExperienceRate.from_experience(segment, **kwargs)
+        rows.append(
+            {
+                **dict(zip(by_cols, key_tuple, strict=True)),
+                "incurred_claims": rate.incurred_claims,
+                "exposure": rate.exposure,
+                "pooled_excess": rate.pooled_excess,
+                "pooled_loss_cost": rate.pooled_loss_cost(),
+                "loss_cost": rate.loss_cost(),
+                "rate": rate.rate(),
+            }
+        )
+    return pd.DataFrame(rows)

@@ -64,6 +64,7 @@ from .experience_rate import (
     expected_excess_charge,
     pool_claims,
 )
+from .experience_rate import experience_rate
 from .indication import ExperienceExhibit, RateIndication
 from .loading import (
     RetentionLoad,
@@ -158,6 +159,7 @@ __all__ = [
     "manual_loss_cost",
     "aggregate_demographic_factor",
     "ExperienceRate",
+    "experience_rate",
     "pool_claims",
     "expected_excess_charge",
     # base rate / off-balance

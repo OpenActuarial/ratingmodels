@@ -22,6 +22,11 @@ book level neutral.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from actuarialpy import Experience
+
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -97,9 +102,9 @@ def average_relativity(
 
 
 def base_rate_from_experience(
-    data: pd.DataFrame,
-    exposure: str,
-    loss: str,
+    data: "pd.DataFrame | Experience",
+    exposure: str | None = None,
+    loss: str | None = None,
     relativity: str | None = None,
     factor_cols: Sequence[str] | None = None,
     by: str | Sequence[str] | None = None,
@@ -129,6 +134,17 @@ def base_rate_from_experience(
         ``average_loss_cost``, ``total_exposure`` -- one call, one base rate
         per row.
     """
+    if not isinstance(data, pd.DataFrame):
+        from actuarialpy import single_role
+
+        exposure = exposure if exposure is not None else single_role(data.exposure, "exposure")
+        loss = loss if loss is not None else single_role(data.expense, "expense")
+        data = data.data
+    elif exposure is None or loss is None:
+        raise TypeError(
+            "exposure and loss column names are required when passing a "
+            "DataFrame; pass an Experience to use its bound roles"
+        )
     if by is not None:
         def _one(g: pd.DataFrame) -> pd.Series:
             r = base_rate_from_experience(g, exposure, loss, relativity, factor_cols)

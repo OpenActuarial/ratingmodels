@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.0
+
+Worksheet construction from the canonical Experience.
+
+- Add `ExperienceRate.from_experience(exp, ...)`: sums the bound expense and
+  exposure roles, and with `pooling_point`/`claimant_col` caps each
+  claimant's total to derive `pooled_excess`. Trend, charges, factors, and
+  retention stay caller-supplied judgment.
+- Add `experience_rate(exp, by=...)`: one worksheet row per segment as a tidy
+  frame, or the single `ExperienceRate` without `by`.
+- Add `ExperienceExhibit.from_experience(exp, ...)`: premium from the
+  `revenue` role and losses from the `expense` role, summed per period of
+  the bound date; on-level, development, and trend factors stay explicit.
+- Scalar constructors are unchanged.
+- Requires `actuarialpy>=0.45`.
+- `base_rate_from_experience` accepts the canonical `Experience`, resolving
+  the exposure and loss columns from its bound roles.
+- `ExperienceRate.from_experience` gains `expense=` to select which bound
+  expense columns constitute claims on multi-expense Experiences.
+
 ## 0.7.3 - 2026-07-11
 
 ### Added
