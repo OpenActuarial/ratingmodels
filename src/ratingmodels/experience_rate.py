@@ -232,6 +232,12 @@ class ExperienceRate:
         )
 
 
+def _tab_of(exp):
+    from actuarialpy import ExperienceSet
+
+    return exp.tab if isinstance(exp, ExperienceSet) else exp
+
+
 def experience_rate(
     exp: "Experience",
     *,
@@ -245,6 +251,7 @@ def experience_rate(
     worksheet row per segment of the bound frame and returns a tidy DataFrame
     of the rate components -- book-level sugar over the classmethod.
     """
+    exp = _tab_of(exp)
     if by is None:
         return ExperienceRate.from_experience(exp, **kwargs)
     by_cols = [by] if isinstance(by, str) else list(by)

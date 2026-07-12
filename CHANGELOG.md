@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0
+
+`experience_rate()` accepts an `ExperienceSet` (routes to `tab`). Test
+fixtures updated for the `Source` rename in actuarialpy 0.46.
 ## 0.8.0
 
 Worksheet construction from the canonical Experience.

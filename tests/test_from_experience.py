@@ -90,7 +90,7 @@ def test_exhibit_from_experience_annual_periods():
 
 
 def test_expense_selector_on_multi_expense_experience():
-    from actuarialpy import Experience, Measures
+    from actuarialpy import Experience, Source
     months = pd.date_range("2025-01-01", periods=3, freq="MS")
     membership = pd.DataFrame([{"member_id": m, "month": t, "member_months": 1.0}
                                for m in ("M1", "M2") for t in months])
@@ -102,8 +102,8 @@ def test_expense_selector_on_multi_expense_experience():
                          for m in ("M1", "M2") for t in months])
     exp = Experience.from_tables(
         membership, grain=["member_id", "month"], exposure="member_months",
-        tables=[Measures(lines, expense="paid", wide_by="claim_type", date="incurred_date"),
-                Measures(fees, expense="admin_fee")],
+        sources=[Source(lines, expense="paid", wide_by="claim_type", date="incurred_date"),
+                Source(fees, expense="admin_fee")],
         date="month", period="M")
     claims_only = rm.ExperienceRate.from_experience(exp, expense=["inpatient", "outpatient"])
     assert claims_only.incurred_claims == pytest.approx(1_000.0)
