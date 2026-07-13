@@ -61,7 +61,8 @@ def _lorenz_gini(order_key, actual, exposure):
     cum_w = np.concatenate([[0.0], np.cumsum(w)]) / total_w
     cum_loss = np.concatenate([[0.0], np.cumsum(loss)]) / total_loss
     # area under the Lorenz curve by trapezoid; Gini = 1 - 2 * area
-    area = np.trapezoid(cum_loss, cum_w)
+    trapz = getattr(np, "trapezoid", None) or np.trapz  # numpy<2
+    area = trapz(cum_loss, cum_w)
     return float(1.0 - 2.0 * area)
 
 

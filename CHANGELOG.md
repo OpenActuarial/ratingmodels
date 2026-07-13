@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.1
+
+Compatibility patch.
+
+- Gini: use the repo's numpy<2 compat idiom for the trapezoid rule in
+  `evaluation.py` (as `onlevel.py` already did), so the declared
+  `numpy>=1.23` floor is real. `np.trapezoid` only exists on numpy>=2.
+- Raise the pandas floor to the empirically true one: `pandas>=2.2`. The
+  library passes `include_groups=` to `groupby.apply` in five modules, added
+  in pandas 2.2 -- the old declared floor was never installable with this
+  code. Verified by running the suite at exact floors; the min-deps CI job
+  keeps it honest.
+- Cap the actuarialpy requirement at the next minor: `>=0.46,<0.47`.
+- Declare Python 3.14 support in the classifiers.
+
 ## 0.9.0
 
 `experience_rate()` accepts an `ExperienceSet` (routes to `tab`). Test

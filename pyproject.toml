@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ratingmodels"
-version = "0.9.0"
+version = "0.9.1"
 description = "Rating and pricing models: manual and experience rate build-up, credibility blending, rate indications and decomposition, GLM relativities and evaluation, and pricing scenarios."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,18 +32,19 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = [
-    "numpy>=1.22",
-    "pandas>=1.4",
-    "actuarialpy>=0.46",
+    "numpy>=1.23",
+    "pandas>=2.2",
+    "actuarialpy>=0.46,<0.47",
     "statsmodels>=0.14",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "experiencestudies>=0.4"]
+dev = ["pytest>=7", "pytest-cov", "experiencestudies>=0.5"]
 
 [project.urls]
 Homepage = "https://github.com/OpenActuarial/ratingmodels"
