@@ -41,6 +41,57 @@ import pandas as pd
 #: Sentinel distinguishing "not passed" from an explicit None in diagnostics.
 _UNSET = object()
 
+#: Linear-predictor bounds applied before exponentiation to avoid overflow.
+_ETA_LO, _ETA_HI = -30.0, 30.0
+
+
+class PredictionClipWarning(UserWarning):
+    """Emitted when a linear predictor is clipped before exponentiation.
+
+    Clipping caps a prediction at ``exp(+/-30)`` rather than extrapolating, so a
+    severely extrapolated or unstable model can otherwise return a finite-looking
+    number without any signal. Filter it with the standard :mod:`warnings`
+    machinery, or pass ``on_overflow="raise"`` to fail instead / ``"ignore"`` to
+    silence.
+    """
+
+
+class UnknownLevelWarning(UserWarning):
+    """Emitted when prediction data contains categorical levels unseen at fit time.
+
+    Such levels are scored at the base (reference) level. Pass ``unknown="raise"``
+    to reject them instead, or ``unknown="base"`` (the default) to accept the
+    base-level fallback silently.
+    """
+
+
+def _clip_eta(eta: np.ndarray, on_overflow: str, context: str) -> np.ndarray:
+    """Clip the linear predictor to ``[_ETA_LO, _ETA_HI]``, observably.
+
+    ``on_overflow`` is ``"warn"`` (default -- emit :class:`PredictionClipWarning`
+    naming the affected rows), ``"raise"`` (raise :class:`OverflowError`), or
+    ``"ignore"`` (clip silently, the historical behaviour).
+    """
+    if on_overflow not in ("warn", "raise", "ignore"):
+        raise ValueError("on_overflow must be 'warn', 'raise', or 'ignore'")
+    if not np.all(np.isfinite(eta)):
+        raise ValueError(f"{context}: linear predictor has non-finite values")
+    mask = (eta < _ETA_LO) | (eta > _ETA_HI)
+    n = int(np.count_nonzero(mask))
+    if n and on_overflow != "ignore":
+        rows = np.flatnonzero(mask)
+        msg = (
+            f"{context}: {n} linear-predictor value(s) outside "
+            f"[{_ETA_LO:g}, {_ETA_HI:g}] were clipped before exp (raw range "
+            f"[{float(np.min(eta)):.3g}, {float(np.max(eta)):.3g}]); those "
+            f"predictions are capped, not extrapolated (rows {rows[:10].tolist()}"
+            f"{'...' if n > 10 else ''})"
+        )
+        if on_overflow == "raise":
+            raise OverflowError(msg)
+        warnings.warn(msg, PredictionClipWarning, stacklevel=3)
+    return np.clip(eta, _ETA_LO, _ETA_HI)
+
 
 # --------------------------------------------------------------------------- #
 # Filed / supplied factor tables
@@ -464,24 +515,71 @@ class GLMRelativities:
         data: pd.DataFrame,
         exposure: str | None = None,
         offset: str | None = None,
+        *,
+        unknown: str = "base",
+        on_overflow: str = "warn",
     ) -> np.ndarray:
         """Predicted mean for new rows.
 
-        Categorical levels unseen in fitting fall back to the base level
-        (relativity 1.0). ``exposure`` multiplies the mean; ``offset`` is a
-        column already on the log scale.
+        ``unknown`` controls categorical levels not seen at fit time:
+        ``"base"`` (default) scores them at the base (reference) level silently,
+        ``"warn"`` does the same but emits :class:`UnknownLevelWarning`, and
+        ``"raise"`` rejects them -- the safer default for core pricing, where a
+        new territory or class silently taking the base rate is a real hazard.
+
+        ``on_overflow`` controls the ``exp`` overflow guard on the linear
+        predictor: ``"warn"`` (default) flags clipped rows, ``"raise"`` fails,
+        ``"ignore"`` clips silently. ``exposure`` multiplies the mean; ``offset``
+        is a column already on the log scale.
         """
         if self.coefficients_ is None:
             raise RuntimeError("model is not fit")
+        self._check_unknown_levels(data, unknown)
         X = self._design_matrix_from_info(data)
         eta = X @ self.coefficients_.to_numpy()
         if offset is not None:
             eta += data[offset].to_numpy(dtype=float)
-        eta = np.clip(eta, -30, 30)
+        eta = _clip_eta(eta, on_overflow, "predict")
         mu = np.exp(eta)
         if exposure is not None:
             mu *= data[exposure].to_numpy(dtype=float)
         return mu
+
+    def _check_unknown_levels(self, data: pd.DataFrame, unknown: str) -> None:
+        """Detect categorical values absent from the fitted level sets.
+
+        The known set for each predictor is its base level plus every level that
+        earned a coefficient (main effect or interaction). Anything else is
+        unseen and, unless ``unknown == "raise"``, is scored at the base level.
+        """
+        if unknown not in ("base", "warn", "raise"):
+            raise ValueError("unknown must be 'base', 'warn', or 'raise'")
+        if unknown == "base":
+            return  # accept the base-level fallback silently (historical default)
+        info = self._design_info_
+        known: dict[str, set] = {var: {info["base_levels"].get(var)} for var in info["predictors"]}
+        for term in info["spec"]:
+            if term[0] == "level":
+                known.setdefault(term[1], set()).add(term[2])
+            elif term[0] == "ixcc":
+                _, a, la, b, lb = term
+                known.setdefault(a, set()).add(la)
+                known.setdefault(b, set()).add(lb)
+            elif term[0] == "ixcont":
+                _, a, la, _c = term
+                known.setdefault(a, set()).add(la)
+        offenders: dict[str, list] = {}
+        for var, levels in known.items():
+            if var not in data.columns:
+                continue
+            unseen = set(pd.unique(data[var])) - levels
+            if unseen:
+                offenders[var] = sorted(map(str, unseen))[:10]
+        if offenders:
+            msg = f"categorical level(s) unseen at fit time (scored at base): {offenders}"
+            if unknown == "raise":
+                raise ValueError(msg)
+            warnings.warn(msg, UnknownLevelWarning, stacklevel=3)
 
     def predict_interval(
         self,
@@ -489,6 +587,9 @@ class GLMRelativities:
         confidence_level: float = 0.95,
         exposure: str | None = None,
         offset: str | None = None,
+        *,
+        unknown: str = "base",
+        on_overflow: str = "warn",
     ) -> pd.DataFrame:
         r"""Predicted mean with its confidence interval, per row.
 
@@ -513,6 +614,7 @@ class GLMRelativities:
             )
         if not 0 < confidence_level < 1:
             raise ValueError("confidence_level must be in (0, 1)")
+        self._check_unknown_levels(data, unknown)
         z = NormalDist().inv_cdf(0.5 + confidence_level / 2.0)
         X = self._design_matrix_from_info(data)
         eta = X @ self.coefficients_.to_numpy()
@@ -520,11 +622,12 @@ class GLMRelativities:
             eta += data[offset].to_numpy(dtype=float)
         var_eta = np.einsum("ij,jk,ik->i", X, self.cov_params_.to_numpy(), X)
         se_eta = np.sqrt(np.maximum(var_eta, 0.0))
+        eta = _clip_eta(eta, on_overflow, "predict_interval")
         out = pd.DataFrame(
             {
-                "predicted": np.exp(np.clip(eta, -30, 30)),
-                "ci_low": np.exp(np.clip(eta - z * se_eta, -30, 30)),
-                "ci_high": np.exp(np.clip(eta + z * se_eta, -30, 30)),
+                "predicted": np.exp(eta),
+                "ci_low": np.exp(np.clip(eta - z * se_eta, _ETA_LO, _ETA_HI)),
+                "ci_high": np.exp(np.clip(eta + z * se_eta, _ETA_LO, _ETA_HI)),
             },
             index=data.index,
         )
